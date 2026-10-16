@@ -56,32 +56,15 @@ async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
                   {lead.email}
                 </a>
               </Row>
-              <Row label="Mobile number">
-                {lead.phone ? (
-                  <a href={`tel:${lead.phone.replace(/\s+/g, "")}`} className="text-blue-600 hover:underline dark:text-blue-400">
-                    {lead.phone}
-                  </a>
-                ) : null}
+              <Row label="Business name">{lead.businessName}</Row>
+              <Row label="Business website">
+                <MaybeLink href={lead.businessWebsite} />
               </Row>
-              <Row label="What is this meeting about">{lead.topic}</Row>
-              <Row label="Additional notes">{lead.notes}</Row>
-              <Row label="Budget">{lead.budget}</Row>
-              <Row label="X / Twitter">
-                {lead.twitter ? (
-                  /^https?:\/\//.test(lead.twitter) ? (
-                    <a
-                      href={lead.twitter}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="break-all text-blue-600 hover:underline dark:text-blue-400"
-                    >
-                      {lead.twitter}
-                    </a>
-                  ) : (
-                    lead.twitter
-                  )
-                ) : null}
-              </Row>
+              <Row label="What problem are you looking to solve?">{lead.problem}</Row>
+              <Row label="Why did you book this call?">{lead.bookingReason}</Row>
+              <Row label="How much capital have you raised?">{lead.capitalRaised}</Row>
+              <Row label="Expected investment range">{lead.investmentRange}</Row>
+              <Row label="How did you find us?">{lead.referralSource}</Row>
               {lead.extraFields.map((f) => (
                 <Row key={f.key} label={f.label}>
                   {f.value}
@@ -89,6 +72,22 @@ async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
               ))}
             </dl>
           </Card>
+
+          {Object.values(lead.legacy).some(Boolean) && (
+            <Card title="Old form answers">
+              <dl className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {lead.legacy.phone && <Row label="Mobile number">{lead.legacy.phone}</Row>}
+                {lead.legacy.topic && <Row label="What is this meeting about">{lead.legacy.topic}</Row>}
+                {lead.legacy.notes && <Row label="Additional notes">{lead.legacy.notes}</Row>}
+                {lead.legacy.budget && <Row label="Budget">{lead.legacy.budget}</Row>}
+                {lead.legacy.twitter && (
+                  <Row label="X / Twitter">
+                    <MaybeLink href={lead.legacy.twitter} />
+                  </Row>
+                )}
+              </dl>
+            </Card>
+          )}
 
           <Card title="Internal notes">
             <form action={saveInternalNotes.bind(null, lead.id)} className="space-y-3 p-4">
@@ -158,6 +157,21 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
       <h2 className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold dark:border-zinc-800">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function MaybeLink({ href }: { href: string | null }) {
+  if (!href) return null;
+  if (!/^https?:\/\//.test(href)) return <>{href}</>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="break-all text-blue-600 hover:underline dark:text-blue-400"
+    >
+      {href}
+    </a>
   );
 }
 

@@ -7,12 +7,21 @@ create table if not exists public.leads (
   -- Booking form answers
   name                text not null,
   email               text not null default '',
+  business_name       text,
+  business_website    text,
+  problem             text,
+  booking_reason      text,
+  capital_raised      text,
+  investment_range    text,
+  referral_source     text,
+  extra_fields        jsonb not null default '[]'::jsonb,
+
+  -- Answers from the old booking form, kept for leads that used it
   phone               text,
   topic               text,
   notes               text,
   budget              text,
   twitter             text,
-  extra_fields        jsonb not null default '[]'::jsonb,
 
   -- Booking details (kept in sync with Cal.com)
   start_time          timestamptz not null,

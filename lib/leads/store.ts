@@ -12,12 +12,20 @@ interface LeadRow {
   id: string;
   name: string;
   email: string;
+  business_name: string | null;
+  business_website: string | null;
+  problem: string | null;
+  booking_reason: string | null;
+  capital_raised: string | null;
+  investment_range: string | null;
+  referral_source: string | null;
+  extra_fields: Lead["extraFields"];
+  // Old booking form; never written for new bookings.
   phone: string | null;
   topic: string | null;
   notes: string | null;
   budget: string | null;
   twitter: string | null;
-  extra_fields: Lead["extraFields"];
   start_time: string;
   end_time: string;
   time_zone: string | null;
@@ -44,12 +52,21 @@ function fromRow(row: LeadRow, events: EventRow[] = []): Lead {
     id: row.id,
     name: row.name,
     email: row.email,
-    phone: row.phone,
-    topic: row.topic,
-    notes: row.notes,
-    budget: row.budget,
-    twitter: row.twitter,
+    businessName: row.business_name,
+    businessWebsite: row.business_website,
+    problem: row.problem,
+    bookingReason: row.booking_reason,
+    capitalRaised: row.capital_raised,
+    investmentRange: row.investment_range,
+    referralSource: row.referral_source,
     extraFields: row.extra_fields ?? [],
+    legacy: {
+      phone: row.phone,
+      topic: row.topic,
+      notes: row.notes,
+      budget: row.budget,
+      twitter: row.twitter,
+    },
     startTime: row.start_time,
     endTime: row.end_time,
     timeZone: row.time_zone,
@@ -73,11 +90,13 @@ function calColumns(booking: BookingInput) {
   return {
     name: f.name,
     email: f.email,
-    phone: f.phone,
-    topic: f.topic,
-    notes: f.notes,
-    budget: f.budget,
-    twitter: f.twitter,
+    business_name: f.businessName,
+    business_website: f.businessWebsite,
+    problem: f.problem,
+    booking_reason: f.bookingReason,
+    capital_raised: f.capitalRaised,
+    investment_range: f.investmentRange,
+    referral_source: f.referralSource,
     extra_fields: f.extraFields,
     start_time: f.startTime,
     end_time: f.endTime,

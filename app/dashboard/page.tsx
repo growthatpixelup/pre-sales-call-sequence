@@ -96,7 +96,7 @@ async function LeadsView({ searchParams }: { searchParams: SearchParams }) {
             type="search"
             name="q"
             defaultValue={q}
-            placeholder="Search name, email, topic…"
+            placeholder="Search name, email, business…"
             className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm sm:w-64 sm:flex-none dark:border-zinc-700 dark:bg-zinc-900"
           />
           <select
@@ -142,7 +142,16 @@ function buildView(leads: Lead[], filters: { q: string; status: string; stage: s
     }
     if (stage !== "all" && lead.stage !== stage) return false;
     if (!q) return true;
-    const haystack = [lead.name, lead.email, lead.phone, lead.topic, lead.notes, lead.budget]
+    const haystack = [
+      lead.name,
+      lead.email,
+      lead.businessName,
+      lead.businessWebsite,
+      lead.problem,
+      lead.bookingReason,
+      lead.referralSource,
+      lead.legacy.topic,
+    ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
@@ -171,8 +180,9 @@ function LeadsTable({ rows }: { rows: { lead: Lead; status: CallStatus }[] }) {
           <thead className="border-b border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
             <tr>
               <th className="px-4 py-3">Lead</th>
-              <th className="px-4 py-3">Meeting about</th>
-              <th className="px-4 py-3">Budget</th>
+              <th className="px-4 py-3">Problem</th>
+              <th className="px-4 py-3">Investment range</th>
+              <th className="px-4 py-3">Capital raised</th>
               <th className="px-4 py-3">Call</th>
               <th className="px-4 py-3">Stage</th>
             </tr>
@@ -185,12 +195,19 @@ function LeadsTable({ rows }: { rows: { lead: Lead; status: CallStatus }[] }) {
                     {lead.name}
                   </Link>
                   <div className="text-xs text-zinc-500 dark:text-zinc-400">{lead.email}</div>
-                  {lead.phone && <div className="text-xs text-zinc-500 dark:text-zinc-400">{lead.phone}</div>}
+                  {lead.businessName && (
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">{lead.businessName}</div>
+                  )}
                 </td>
                 <td className="max-w-xs px-4 py-3">
-                  <p className="line-clamp-2 text-zinc-700 dark:text-zinc-300">{lead.topic ?? "—"}</p>
+                  <p className="line-clamp-2 text-zinc-700 dark:text-zinc-300">
+                    {lead.problem ?? lead.legacy.topic ?? "—"}
+                  </p>
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-zinc-700 dark:text-zinc-300">{lead.budget ?? "—"}</td>
+                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
+                  {lead.investmentRange ?? lead.legacy.budget ?? "—"}
+                </td>
+                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{lead.capitalRaised ?? "—"}</td>
                 <td className="whitespace-nowrap px-4 py-3">
                   <div className="text-zinc-700 dark:text-zinc-300">{formatDateTime(lead.startTime)}</div>
                   <div className="mt-1">

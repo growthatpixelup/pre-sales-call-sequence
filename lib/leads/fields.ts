@@ -1,29 +1,38 @@
 import type { BookingInput, ExtraField, Lead, RawField } from "./types";
 
-type MappedField = "name" | "email" | "phone" | "topic" | "notes" | "budget" | "twitter";
+type MappedField =
+  | "name"
+  | "email"
+  | "businessName"
+  | "businessWebsite"
+  | "problem"
+  | "bookingReason"
+  | "capitalRaised"
+  | "investmentRange"
+  | "referralSource";
 
 /**
  * How booking form answers map onto lead fields. Cal.com sends each answer keyed by the
- * field's "identifier" (set in the event type's booking questions), and the webhook also
- * sends the label. A field matches if its identifier is in `keys` or its label matches.
- * If you rename a question in Cal.com, add its identifier here.
+ * question's "identifier" (Event type → Advanced → Booking questions), and the webhook also
+ * sends the question's label. A question matches a field if its identifier is in `keys`, or if
+ * its label (or its identifier read as words) matches `label`. Fields are tried in this order
+ * and each question fills at most one field. Unmatched answers are kept as extra fields.
  */
 const FIELD_MAP: Record<MappedField, { keys: string[]; label: RegExp }> = {
   name: { keys: ["name", "fullName", "full-name"], label: /^(your )?(full )?name$/i },
   email: { keys: ["email"], label: /^(your )?email( address)?$/i },
-  phone: {
-    keys: ["attendeePhoneNumber", "phone", "phoneNumber", "phone-number", "mobile", "mobileNumber", "mobile-number"],
-    label: /mobile|phone|whatsapp/i,
+  businessName: { keys: ["business-name", "businessName", "company"], label: /business name|company name/i },
+  businessWebsite: { keys: ["business-website", "businessWebsite", "website"], label: /website/i },
+  problem: { keys: ["problem"], label: /problem|looking to solve/i },
+  bookingReason: { keys: ["why-did-you-book-this-call", "reason"], label: /why did you book/i },
+  capitalRaised: { keys: ["capital-raised", "capitalRaised"], label: /capital|raised/i },
+  investmentRange: {
+    keys: ["investment-range", "investmentRange"],
+    label: /investment range|expected investment/i,
   },
-  topic: {
-    keys: ["title", "what-is-this-meeting-about", "topic", "agenda"],
-    label: /what is this meeting about|topic|agenda/i,
-  },
-  notes: { keys: ["notes", "additional-notes", "additionalNotes"], label: /additional notes/i },
-  budget: { keys: ["budget", "your-budget"], label: /budget/i },
-  twitter: {
-    keys: ["twitter", "x", "x-twitter", "x-twitter-link", "twitter-link", "x-link", "xTwitterLink"],
-    label: /twitter|^x\b|\bx link\b|x\/twitter/i,
+  referralSource: {
+    keys: ["how-did-you-find-us", "referral", "source"],
+    label: /find us|hear about us/i,
   },
 };
 
@@ -52,22 +61,6 @@ export function valueToString(value: unknown): string | null {
   return String(value);
 }
 
-function matches(field: RawField, target: MappedField) {
-  const rule = FIELD_MAP[target];
-  const key = field.key.toLowerCase();
-  if (rule.keys.some((k) => k.toLowerCase() === key)) return true;
-  return field.label ? rule.label.test(field.label.trim()) : false;
-}
-
-export function normaliseTwitter(value: string | null): string | null {
-  if (!value) return null;
-  const v = value.trim();
-  if (/^https?:\/\//i.test(v)) return v;
-  if (/^(www\.)?(x|twitter)\.com\//i.test(v)) return `https://${v}`;
-  const handle = v.replace(/^@/, "");
-  return /^\w{1,15}$/.test(handle) ? `https://x.com/${handle}` : v;
-}
-
 function humanise(key: string) {
   return key
     .replace(/[-_]+/g, " ")
@@ -75,22 +68,39 @@ function humanise(key: string) {
     .replace(/^\w/, (c) => c.toUpperCase());
 }
 
+function matches(field: RawField, target: MappedField) {
+  const rule = FIELD_MAP[target];
+  const key = field.key.toLowerCase();
+  if (rule.keys.some((k) => k.toLowerCase() === key)) return true;
+  // The API import only has identifiers, so also try the identifier as words.
+  return rule.label.test(field.label?.trim() || humanise(field.key));
+}
+
+/** Adds https:// to bare domains so they can be linked. */
+export function normaliseUrl(value: string | null): string | null {
+  if (!value) return null;
+  const v = value.trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  return /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(v) ? `https://${v}` : v;
+}
+
 /** Turns a normalised booking into the Cal-owned part of a lead. */
 export function bookingToLeadFields(
   booking: BookingInput,
-): Omit<Lead, "stage" | "internalNotes" | "events" | "source" | "createdAt" | "updatedAt"> {
+): Omit<Lead, "legacy" | "stage" | "internalNotes" | "events" | "source" | "createdAt" | "updatedAt"> {
   const mapped: Partial<Record<MappedField, string | null>> = {};
   const extraFields: ExtraField[] = [];
 
   for (const field of booking.fields) {
     if (IGNORED_KEYS.has(field.key)) continue;
+    const value = valueToString(field.value);
+    if (!value) continue;
     const target = (Object.keys(FIELD_MAP) as MappedField[]).find(
       (t) => mapped[t] == null && matches(field, t),
     );
-    const value = valueToString(field.value);
     if (target) {
       mapped[target] = value;
-    } else if (value) {
+    } else {
       extraFields.push({ key: field.key, label: field.label ?? humanise(field.key), value });
     }
   }
@@ -99,11 +109,13 @@ export function bookingToLeadFields(
     id: booking.id,
     name: mapped.name ?? booking.attendeeName ?? "Unknown",
     email: mapped.email ?? booking.attendeeEmail ?? "",
-    phone: mapped.phone ?? booking.attendeePhone ?? null,
-    topic: mapped.topic ?? null,
-    notes: mapped.notes ?? null,
-    budget: mapped.budget ?? null,
-    twitter: normaliseTwitter(mapped.twitter ?? null),
+    businessName: mapped.businessName ?? null,
+    businessWebsite: normaliseUrl(mapped.businessWebsite ?? null),
+    problem: mapped.problem ?? null,
+    bookingReason: mapped.bookingReason ?? null,
+    capitalRaised: mapped.capitalRaised ?? null,
+    investmentRange: mapped.investmentRange ?? null,
+    referralSource: mapped.referralSource ?? null,
     extraFields,
     startTime: booking.startTime,
     endTime: booking.endTime,

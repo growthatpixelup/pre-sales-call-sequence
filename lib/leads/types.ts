@@ -10,6 +10,14 @@ export interface ExtraField {
   value: string;
 }
 
+export interface LegacyAnswers {
+  phone: string | null;
+  topic: string | null;
+  notes: string | null;
+  budget: string | null;
+  twitter: string | null;
+}
+
 export interface LeadEvent {
   type: string;
   at: string;
@@ -23,12 +31,17 @@ export interface Lead {
   // Booking form answers
   name: string;
   email: string;
-  phone: string | null;
-  topic: string | null;
-  notes: string | null;
-  budget: string | null;
-  twitter: string | null;
+  businessName: string | null;
+  businessWebsite: string | null;
+  problem: string | null;
+  bookingReason: string | null;
+  capitalRaised: string | null;
+  investmentRange: string | null;
+  referralSource: string | null;
   extraFields: ExtraField[];
+
+  /** Answers from the old booking form. Only set on leads that booked with it. */
+  legacy: LegacyAnswers;
 
   // Booking details
   startTime: string;
