@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import { callStatus, formatDateTime, type CallStatus } from "@/lib/format";
 import { listLeads } from "@/lib/leads/store";
 import { LEAD_STAGES, type Lead } from "@/lib/leads/types";
@@ -172,51 +172,94 @@ function buildView(leads: Lead[], filters: { q: string; status: string; stage: s
   return { filtered, stats };
 }
 
-function LeadsTable({ rows }: { rows: { lead: Lead; status: CallStatus }[] }) {
+const TH = "whitespace-nowrap px-4 py-3";
+const TD = "px-4 py-3 align-top text-zinc-700 dark:text-zinc-300";
+// The pinned name column needs its own background so scrolled cells don't show through.
+const STICKY = "sticky left-0 z-10 shadow-[1px_0_0_0] shadow-zinc-200 dark:shadow-zinc-800";
+const STICKY_BODY = `${STICKY} bg-white group-hover:bg-zinc-50 dark:bg-zinc-900 dark:group-hover:bg-zinc-800`;
+const STICKY_HEAD = `${STICKY} bg-zinc-50 dark:bg-zinc-900`;
+
+type Row = { lead: Lead; status: CallStatus };
+
+/** Table columns: every Cal.com form answer, in the order the form asks them, then the call. */
+const COLUMNS: { label: string; cell: (row: Row) => ReactNode; className?: string }[] = [
+  {
+    label: "Name",
+    className: `${STICKY_BODY} whitespace-nowrap`,
+    cell: ({ lead }) => (
+      <Link
+        href={`/dashboard/leads/${lead.id}`}
+        className="font-medium text-zinc-900 hover:underline dark:text-zinc-100"
+      >
+        {lead.name}
+      </Link>
+    ),
+  },
+  {
+    label: "Email",
+    className: "whitespace-nowrap",
+    cell: ({ lead }) => (
+      <a href={`mailto:${lead.email}`} className="hover:underline">
+        {lead.email}
+      </a>
+    ),
+  },
+  { label: "Business name", className: "max-w-48", cell: ({ lead }) => <Answer value={lead.businessName} /> },
+  { label: "Website", className: "max-w-56", cell: ({ lead }) => <Website url={lead.businessWebsite} /> },
+  {
+    label: "Problem to solve",
+    className: "w-72 min-w-72 max-w-72",
+    cell: ({ lead }) => <Answer value={lead.problem ?? lead.legacy.topic} lines={3} />,
+  },
+  {
+    label: "Why they booked",
+    className: "w-72 min-w-72 max-w-72",
+    cell: ({ lead }) => <Answer value={lead.bookingReason} lines={3} />,
+  },
+  { label: "Capital raised", className: "max-w-48", cell: ({ lead }) => <Answer value={lead.capitalRaised} /> },
+  {
+    label: "Investment range",
+    className: "max-w-48",
+    cell: ({ lead }) => <Answer value={lead.investmentRange ?? lead.legacy.budget} />,
+  },
+  { label: "How they found us", className: "max-w-48", cell: ({ lead }) => <Answer value={lead.referralSource} /> },
+  {
+    label: "Call",
+    className: "whitespace-nowrap",
+    cell: ({ lead, status }) => (
+      <>
+        <div>{formatDateTime(lead.startTime)}</div>
+        <div className="mt-1">
+          <CallStatusBadge status={status} />
+        </div>
+      </>
+    ),
+  },
+  { label: "Stage", cell: ({ lead }) => <StageBadge stage={lead.stage} /> },
+];
+
+function LeadsTable({ rows }: { rows: Row[] }) {
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
+        <table className="w-full min-w-max text-left text-sm">
           <thead className="border-b border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
             <tr>
-              <th className="px-4 py-3">Lead</th>
-              <th className="px-4 py-3">Problem</th>
-              <th className="px-4 py-3">Investment range</th>
-              <th className="px-4 py-3">Capital raised</th>
-              <th className="px-4 py-3">Call</th>
-              <th className="px-4 py-3">Stage</th>
+              {COLUMNS.map((c, i) => (
+                <th key={c.label} className={`${TH} ${i === 0 ? STICKY_HEAD : ""}`}>
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {rows.map(({ lead, status }) => (
-              <tr key={lead.id} className="relative hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                <td className="px-4 py-3">
-                  <Link href={`/dashboard/leads/${lead.id}`} className="font-medium after:absolute after:inset-0">
-                    {lead.name}
-                  </Link>
-                  <div className="text-xs text-zinc-500 dark:text-zinc-400">{lead.email}</div>
-                  {lead.businessName && (
-                    <div className="text-xs text-zinc-500 dark:text-zinc-400">{lead.businessName}</div>
-                  )}
-                </td>
-                <td className="max-w-xs px-4 py-3">
-                  <p className="line-clamp-2 text-zinc-700 dark:text-zinc-300">
-                    {lead.problem ?? lead.legacy.topic ?? "—"}
-                  </p>
-                </td>
-                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
-                  {lead.investmentRange ?? lead.legacy.budget ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{lead.capitalRaised ?? "—"}</td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  <div className="text-zinc-700 dark:text-zinc-300">{formatDateTime(lead.startTime)}</div>
-                  <div className="mt-1">
-                    <CallStatusBadge status={status} />
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <StageBadge stage={lead.stage} />
-                </td>
+            {rows.map((row) => (
+              <tr key={row.lead.id} className="group hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                {COLUMNS.map((c) => (
+                  <td key={c.label} className={`${TD} ${c.className ?? ""}`}>
+                    {c.cell(row)}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -224,6 +267,36 @@ function LeadsTable({ rows }: { rows: { lead: Lead; status: CallStatus }[] }) {
       </div>
     </div>
   );
+}
+
+/** A form answer, clamped to a few lines; hovering shows the full text. */
+function Answer({ value, lines = 2 }: { value: string | null; lines?: 2 | 3 }) {
+  if (!value) return <Empty />;
+  return (
+    <p className={lines === 3 ? "line-clamp-3" : "line-clamp-2"} title={value}>
+      {value}
+    </p>
+  );
+}
+
+function Website({ url }: { url: string | null }) {
+  if (!url) return <Empty />;
+  if (!/^https?:\/\//.test(url)) return <span className="block truncate">{url}</span>;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={url}
+      className="block truncate text-blue-600 hover:underline dark:text-blue-400"
+    >
+      {url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+    </a>
+  );
+}
+
+function Empty() {
+  return <span className="text-zinc-400 dark:text-zinc-600">—</span>;
 }
 
 function EmptyState({ hasLeads }: { hasLeads: boolean }) {
