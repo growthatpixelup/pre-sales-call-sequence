@@ -2,7 +2,7 @@ import "server-only";
 
 import { supabase } from "@/lib/supabase";
 import { bookingToLeadFields } from "./fields";
-import type { BookingInput, BookingStatus, Lead, LeadEvent, LeadStage } from "./types";
+import type { BookingInput, BookingStatus, EmailSettings, Lead, LeadEvent, LeadStage } from "./types";
 
 /**
  * Lead storage backed by Supabase (tables `leads` and `lead_events`, see supabase/schema.sql).
@@ -31,6 +31,8 @@ interface LeadRow {
   time_zone: string | null;
   event_title: string | null;
   event_slug: string | null;
+  event_type_id: number | null;
+  email_settings: EmailSettings | null;
   meeting_url: string | null;
   booking_status: BookingStatus;
   cancellation_reason: string | null;
@@ -72,11 +74,13 @@ function fromRow(row: LeadRow, events: EventRow[] = []): Lead {
     timeZone: row.time_zone,
     eventTitle: row.event_title,
     eventSlug: row.event_slug,
+    eventTypeId: row.event_type_id,
     meetingUrl: row.meeting_url,
     bookingStatus: row.booking_status,
     cancellationReason: row.cancellation_reason,
     stage: row.stage,
     internalNotes: row.internal_notes,
+    emailSettings: row.email_settings ?? {},
     events: events.map((e): LeadEvent => ({ type: e.type, at: e.at, ...(e.detail ? { detail: e.detail } : {}) })),
     source: row.source,
     createdAt: row.created_at,
@@ -103,6 +107,8 @@ function calColumns(booking: BookingInput) {
     time_zone: f.timeZone,
     event_title: f.eventTitle,
     event_slug: f.eventSlug,
+    // Keep a known event type if this payload doesn't carry one.
+    ...(f.eventTypeId != null ? { event_type_id: f.eventTypeId } : {}),
     meeting_url: f.meetingUrl,
     booking_status: f.bookingStatus,
     cancellation_reason: f.cancellationReason,
@@ -202,6 +208,11 @@ export async function setBookingStatus(
 
 export async function addLeadEvent(id: string, type: string, detail?: string): Promise<void> {
   if (await exists(id)) await addEvent(id, type, detail);
+}
+
+export async function updateEmailSettings(id: string, settings: EmailSettings): Promise<void> {
+  const { error } = await supabase().from("leads").update({ email_settings: settings }).eq("id", id);
+  if (error) fail("save email settings", error);
 }
 
 export async function updateLeadTracking(

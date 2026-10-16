@@ -60,6 +60,7 @@ export function bookingFromWebhook(payload: Json, fallbackStatus: BookingStatus)
     timeZone: str(attendee?.timeZone),
     eventTitle: str(payload.title),
     eventSlug: str(payload.type) ?? str(eventType.slug),
+    eventTypeId: typeof payload.eventTypeId === "number" ? payload.eventTypeId : null,
     meetingUrl:
       str(metadata.videoCallUrl) ??
       str(videoCallData.url) ??

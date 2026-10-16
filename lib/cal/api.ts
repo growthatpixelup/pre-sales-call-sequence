@@ -22,7 +22,8 @@ interface ApiBooking {
   end: string;
   location?: string;
   cancellationReason?: string;
-  eventType?: { slug?: string };
+  eventTypeId?: number;
+  eventType?: { id?: number; slug?: string };
   attendees?: ApiAttendee[];
   bookingFieldsResponses?: Record<string, unknown>;
 }
@@ -56,6 +57,7 @@ function bookingFromApi(b: ApiBooking): BookingInput {
     timeZone: attendee?.timeZone ?? null,
     eventTitle: b.title ?? null,
     eventSlug: b.eventType?.slug ?? null,
+    eventTypeId: b.eventTypeId ?? b.eventType?.id ?? null,
     meetingUrl: b.location && /^https?:\/\//.test(b.location) ? b.location : null,
     bookingStatus: toStatus(b.status),
     cancellationReason: b.cancellationReason ?? null,

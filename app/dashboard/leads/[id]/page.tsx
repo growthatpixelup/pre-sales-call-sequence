@@ -6,6 +6,7 @@ import { callStatus, formatDateTime, humaniseEvent } from "@/lib/format";
 import { getLead } from "@/lib/leads/store";
 import { saveInternalNotes, updateStage } from "../../actions";
 import { CallStatusBadge, StageBadge } from "../../_components/badges";
+import { EmailPersonalisation, LeadEmails, LinkedInNote } from "../../_components/lead-emails";
 import { StageSelect } from "../../_components/stage-select";
 
 export const metadata: Metadata = { title: "Lead · Dashboard" };
@@ -89,6 +90,8 @@ async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
             </Card>
           )}
 
+          <LeadEmails lead={lead} />
+
           <Card title="Internal notes">
             <form action={saveInternalNotes.bind(null, lead.id)} className="space-y-3 p-4">
               <textarea
@@ -133,6 +136,9 @@ async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
               </Row>
             </dl>
           </Card>
+
+          <EmailPersonalisation lead={lead} />
+          <LinkedInNote lead={lead} />
 
           <Card title="History">
             <ol className="space-y-3 p-4">

@@ -1,3 +1,4 @@
+import type { EmailStatus } from "@/lib/emails/queue";
 import type { CallStatus } from "@/lib/format";
 import type { LeadStage } from "@/lib/leads/types";
 
@@ -40,7 +41,46 @@ const STAGE_STYLES: Record<LeadStage, string> = {
   lost: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
 };
 
-const BASE = "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset";
+const EMAIL_STATUS_STYLES: Record<EmailStatus, { label: string; className: string }> = {
+  scheduled: {
+    label: "Scheduled",
+    className: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:ring-blue-900",
+  },
+  sending: {
+    label: "Sending",
+    className: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:ring-blue-900",
+  },
+  sent: {
+    label: "Sent",
+    className: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-900",
+  },
+  skipped: {
+    label: "Skipped",
+    className: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
+  },
+  cancelled: {
+    label: "Cancelled",
+    className: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
+  },
+  failed: {
+    label: "Failed",
+    className: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-900",
+  },
+};
+
+export function EmailStatusBadge({ status }: { status: EmailStatus | null }) {
+  if (!status) {
+    return (
+      <span className={`${BASE} bg-zinc-50 text-zinc-500 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-500 dark:ring-zinc-800`}>
+        Not scheduled
+      </span>
+    );
+  }
+  const s = EMAIL_STATUS_STYLES[status];
+  return <span className={`${BASE} ${s.className}`}>{s.label}</span>;
+}
+
+const BASE ="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset";
 
 export function CallStatusBadge({ status }: { status: CallStatus }) {
   const s = CALL_STATUS_STYLES[status];

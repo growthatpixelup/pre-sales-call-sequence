@@ -87,7 +87,10 @@ export function normaliseUrl(value: string | null): string | null {
 /** Turns a normalised booking into the Cal-owned part of a lead. */
 export function bookingToLeadFields(
   booking: BookingInput,
-): Omit<Lead, "legacy" | "stage" | "internalNotes" | "events" | "source" | "createdAt" | "updatedAt"> {
+): Omit<
+  Lead,
+  "legacy" | "stage" | "internalNotes" | "emailSettings" | "events" | "source" | "createdAt" | "updatedAt"
+> {
   const mapped: Partial<Record<MappedField, string | null>> = {};
   const extraFields: ExtraField[] = [];
 
@@ -122,6 +125,7 @@ export function bookingToLeadFields(
     timeZone: booking.timeZone,
     eventTitle: booking.eventTitle,
     eventSlug: booking.eventSlug,
+    eventTypeId: booking.eventTypeId,
     meetingUrl: booking.meetingUrl,
     bookingStatus: booking.bookingStatus,
     cancellationReason: booking.cancellationReason,

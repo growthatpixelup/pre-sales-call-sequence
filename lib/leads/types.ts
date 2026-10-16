@@ -18,6 +18,18 @@ export interface LegacyAnswers {
   twitter: string | null;
 }
 
+/** Per-lead email personalisation set on the dashboard. Unset values use lib/emails/config.ts. */
+export interface EmailSettings {
+  /** Case study id for Email 1. */
+  caseStudyId?: string;
+  /** Closing question for Email 1, as full text. */
+  question?: string;
+  /** "Who's joining" line for Email 3, e.g. "Daksh (Founder), Riya (Design lead)". */
+  team?: string;
+  /** Just the names, for the 1-hour reminder, e.g. "Daksh and Riya". */
+  teamNames?: string;
+}
+
 export interface LeadEvent {
   type: string;
   at: string;
@@ -49,6 +61,7 @@ export interface Lead {
   timeZone: string | null;
   eventTitle: string | null;
   eventSlug: string | null;
+  eventTypeId: number | null;
   meetingUrl: string | null;
   bookingStatus: BookingStatus;
   cancellationReason: string | null;
@@ -56,6 +69,7 @@ export interface Lead {
   // Tracking (owned by the dashboard, never overwritten by Cal.com)
   stage: LeadStage;
   internalNotes: string;
+  emailSettings: EmailSettings;
   events: LeadEvent[];
 
   source: "webhook" | "import";
@@ -78,6 +92,7 @@ export interface BookingInput {
   timeZone: string | null;
   eventTitle: string | null;
   eventSlug: string | null;
+  eventTypeId: number | null;
   meetingUrl: string | null;
   bookingStatus: BookingStatus;
   cancellationReason: string | null;
