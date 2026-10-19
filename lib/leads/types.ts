@@ -22,12 +22,12 @@ export interface LegacyAnswers {
 export interface EmailSettings {
   /** Case study id for Email 1. */
   caseStudyId?: string;
+  /** One line in Email 1 linking them to the case study. Left out when empty. */
+  companyLine?: string;
   /** Closing question for Email 1, as full text. */
   question?: string;
   /** "Who's joining" line for Email 3, e.g. "Daksh (Founder), Riya (Design lead)". */
   team?: string;
-  /** Just the names, for the 1-hour reminder, e.g. "Daksh and Riya". */
-  teamNames?: string;
 }
 
 export interface LeadEvent {

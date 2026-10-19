@@ -58,8 +58,9 @@ export async function POST(request: Request) {
       await emailStep("scheduling emails", async () => {
         const lead = await getLead(booking.id);
         if (!lead) return;
-        if (trigger === "BOOKING_RESCHEDULED") await cancelPending(lead.id, "Call was rescheduled", ["no_show"]);
-        await scheduleSequence(lead);
+        const rescheduled = trigger === "BOOKING_RESCHEDULED";
+        if (rescheduled) await cancelPending(lead.id, "Call was rescheduled", ["no_show"]);
+        await scheduleSequence(lead, { rescheduled });
       });
       break;
     }

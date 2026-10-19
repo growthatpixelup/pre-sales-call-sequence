@@ -5,7 +5,7 @@ import { addDays, localDate, safeTimeZone } from "@/lib/emails/time";
 const SLOTS_API_VERSION = "2024-09-04";
 
 /**
- * Two open slots on different days, starting tomorrow (guest's time zone), for the no-show
+ * Two open slots on different days, at least 24 hours out, for the no-show
  * email's "does [Day] at [Time] or [Day] at [Time] work better?". Returns [] if Cal.com can't
  * be reached or there aren't two days with availability in the next two weeks.
  */
@@ -25,9 +25,10 @@ export async function nextTwoSlots(eventTypeId: number, timeZone: string | null)
     if (!res.ok) return [];
     const body = (await res.json()) as { data?: Record<string, { start: string }[]> };
     const days = Object.keys(body.data ?? {}).sort();
+    const earliest = Date.now() + 24 * 60 * 60_000;
     const picks: Date[] = [];
     for (const day of days) {
-      const first = body.data?.[day]?.[0];
+      const first = body.data?.[day]?.find((slot) => Date.parse(slot.start) >= earliest);
       if (first) picks.push(new Date(first.start));
       if (picks.length === 2) break;
     }

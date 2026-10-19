@@ -59,9 +59,9 @@ export async function saveEmailSettings(leadId: string, formData: FormData) {
   };
   const settings: EmailSettings = {
     caseStudyId: text("caseStudyId"),
+    companyLine: text("companyLine"),
     question: text("question"),
     team: text("team"),
-    teamNames: text("teamNames"),
   };
   // Values equal to the defaults aren't stored, so later config changes still apply.
   const defaults = defaultEmailSettings();

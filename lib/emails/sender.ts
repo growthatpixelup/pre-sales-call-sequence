@@ -9,6 +9,7 @@ import {
   applyPlan,
   cancelPending,
   claimDueEmails,
+  listLeadEmails,
   markCancelled,
   markFailed,
   markSent,
@@ -35,10 +36,16 @@ export function emailSetupProblems(): string[] {
   return problems;
 }
 
-/** Plans (or re-plans after a reschedule) a lead's sequence. */
-export async function scheduleSequence(lead: Lead) {
+/**
+ * Plans a lead's sequence. After a reschedule it's rebuilt from the new call time: the
+ * confirmation and call-day emails go out again, Email 1 and Email 2 never do.
+ */
+export async function scheduleSequence(lead: Lead, { rescheduled = false } = {}) {
   if (lead.bookingStatus !== "accepted") return;
-  await applyPlan(lead, planSequence(lead));
+  const sent = new Set((await listLeadEmails(lead.id)).filter((e) => e.status === "sent").map((e) => e.step));
+  const resend = rescheduled ? PRE_CALL_STEPS.filter((s) => s !== "case_study" && s !== "how_we_work") : [];
+  for (const step of resend) sent.delete(step);
+  await applyPlan(lead, planSequence(lead, new Date(), sent), resend);
 }
 
 export async function cancelSequence(leadId: string, reason: string) {
@@ -74,6 +81,10 @@ async function sendOne(email: LeadEmail, problems: string[]) {
     return markSkipped(email.id, "Call had already ended");
   }
   if (!lead.email) return markSkipped(email.id, "Lead has no email address");
+  if (email.step === "how_we_work") {
+    const caseStudy = (await listLeadEmails(lead.id)).find((e) => e.step === "case_study");
+    if (caseStudy?.status !== "sent") return markSkipped(email.id, "Email 1 wasn't sent");
+  }
   if (problems.length) return markWaiting(email, `Waiting: ${problems[0]}`);
 
   const rendered = renderEmail(email.step, lead, await emailContext(lead, email));
@@ -89,7 +100,8 @@ async function sendOne(email: LeadEmail, problems: string[]) {
       text: rendered.text,
       tags: [{ name: "step", value: email.step }],
     },
-    { idempotencyKey: `lead-email-${email.id}` },
+    // Includes the call time so a confirmation resent after a reschedule isn't deduplicated.
+    { idempotencyKey: `lead-email-${email.id}-${lead.startTime}` },
   );
 
   if (error || !data) return markFailed(email, error?.message ?? "Unknown Resend error");

@@ -122,6 +122,15 @@ export function EmailPersonalisation({ lead }: { lead: Lead }) {
           </select>
         </label>
         <label className="block space-y-1">
+          <span className="text-sm font-medium">Company line (Email 1)</span>
+          <textarea name="companyLine" rows={2} defaultValue={settings.companyLine} className={INPUT} />
+          <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+            One line linking them to the case study, based on a real fact (a raise, a launch, their YC batch, a
+            booking form answer). Under 20 words, no praise, no guesses. E.g. “Feels close to where you are right
+            now, fresh off your seed round.” Leave empty to skip the line.
+          </span>
+        </label>
+        <label className="block space-y-1">
           <span className="text-sm font-medium">Closing question (Email 1)</span>
           <textarea name="question" rows={4} defaultValue={settings.question} className={INPUT} />
           <span className="block text-xs text-zinc-500 dark:text-zinc-400">
@@ -131,10 +140,6 @@ export function EmailPersonalisation({ lead }: { lead: Lead }) {
         <label className="block space-y-1">
           <span className="text-sm font-medium">Who&apos;s joining (Email 3)</span>
           <input name="team" defaultValue={settings.team} className={INPUT} />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-sm font-medium">Names for the 1-hour reminder</span>
-          <input name="teamNames" defaultValue={settings.teamNames} className={INPUT} />
         </label>
         <button
           type="submit"

@@ -81,10 +81,26 @@ export const formatDayDate = (d: Date, tz: string) =>
 /** "10:30 AM" */
 export const formatTime = (d: Date, tz: string) => fmt(d, tz, { hour: "numeric", minute: "2-digit" });
 
-/** "India Standard Time", falling back to the zone id. */
-export function formatZoneName(d: Date, tz: string): string {
-  const name = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "long" })
+function zoneName(d: Date, tz: string, locale: string, style: Intl.DateTimeFormatOptions["timeZoneName"]) {
+  return new Intl.DateTimeFormat(locale, { timeZone: tz, timeZoneName: style })
     .formatToParts(d)
     .find((p) => p.type === "timeZoneName")?.value;
-  return name ?? tz;
+}
+
+/**
+ * A short zone label: "PT", "ET", "IST", "BST". Each runtime locale only knows abbreviations for
+ * some zones (en-US has "PT" but gives India "GMT+5:30"), so try a few, then fall back to the long
+ * name ("Australian Eastern Daylight Time") rather than a bare offset.
+ */
+export function formatZoneShort(d: Date, tz: string): string {
+  const tries: [string, Intl.DateTimeFormatOptions["timeZoneName"]][] = [
+    ["en-US", "shortGeneric"],
+    ["en-IN", "short"],
+    ["en-GB", "short"],
+  ];
+  for (const [locale, style] of tries) {
+    const name = zoneName(d, tz, locale, style);
+    if (name && /^[A-Z]{2,5}$/.test(name)) return name;
+  }
+  return zoneName(d, tz, "en-US", "long") ?? tz;
 }

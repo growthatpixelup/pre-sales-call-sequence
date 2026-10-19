@@ -64,11 +64,20 @@ export async function listLeadEmails(leadId: string): Promise<LeadEmail[]> {
   return (data as Row[]).map(fromRow);
 }
 
-/** Writes a plan for a lead, leaving emails that were already sent alone. */
-export async function applyPlan(lead: Lead, plan: PlannedEmail[]): Promise<void> {
+/**
+ * Writes a plan for a lead, leaving emails that were already sent alone. Steps in `resend` that
+ * already went out are sent again if the plan has a time for them (after a reschedule).
+ */
+export async function applyPlan(lead: Lead, plan: PlannedEmail[], resend: EmailStep[] = []): Promise<void> {
   const existing = await listLeadEmails(lead.id);
+  const keep = (p: PlannedEmail) =>
+    existing.some(
+      (e) =>
+        e.step === p.step &&
+        (e.status === "sending" || (e.status === "sent" && !(p.dueAt && resend.includes(p.step)))),
+    );
   const rows = plan
-    .filter((p) => !existing.some((e) => e.step === p.step && isFinal(e.status)))
+    .filter((p) => !keep(p))
     .map((p) => ({
       lead_id: lead.id,
       step: p.step,
