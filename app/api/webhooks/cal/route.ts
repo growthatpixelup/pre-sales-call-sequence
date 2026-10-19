@@ -1,5 +1,5 @@
 import { bookingFromWebhook, previousBookingUid, verifyCalSignature } from "@/lib/cal/webhook";
-import { cancelSequence, queueNoShowNudge, scheduleSequence } from "@/lib/emails/sender";
+import { cancelSequence, processDueEmails, queueNoShowNudge, scheduleSequence } from "@/lib/emails/sender";
 import { cancelPending } from "@/lib/emails/queue";
 import { addLeadEvent, getLead, setBookingStatus, upsertFromBooking } from "@/lib/leads/store";
 
@@ -62,6 +62,8 @@ export async function POST(request: Request) {
         if (rescheduled) await cancelPending(lead.id, "Call was rescheduled", ["no_show"]);
         await scheduleSequence(lead, { rescheduled });
       });
+      // Send the confirmation now rather than waiting for the next cron run.
+      await emailStep("sending due emails", () => processDueEmails());
       break;
     }
 

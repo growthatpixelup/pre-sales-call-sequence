@@ -54,10 +54,8 @@ export function planSequence(lead: Lead, now = new Date(), alreadySent = new Set
     return plan;
   }
 
-  // Booking confirmation: 30 minutes after booking. If the call is close, send it straight away.
-  let confirmationAt = new Date(bookedAt.getTime() + 30 * MINUTE);
-  if (confirmationAt.getTime() >= start.getTime() - HOUR) confirmationAt = bookedAt;
-  if (confirmationAt < now) confirmationAt = now;
+  // Booking confirmation: straight away.
+  const confirmationAt = bookedAt > now ? bookedAt : now;
   at("confirmation", confirmationAt);
 
   // Email 3: 8 AM on the call day, or 6 PM the day before if the call is before noon. Skipped
