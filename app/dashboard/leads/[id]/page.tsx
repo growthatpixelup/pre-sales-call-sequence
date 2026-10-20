@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
+import { estimatedValue, formatMoney } from "@/lib/analytics";
+import { listReplies } from "@/lib/emails/replies";
 import { callStatus, formatDateTime, humaniseEvent } from "@/lib/format";
 import { getLead } from "@/lib/leads/store";
-import { saveInternalNotes, updateStage } from "../../actions";
+import { markLeadRepliesRead, saveDealValue, saveInternalNotes, updateStage } from "../../actions";
 import { CallStatusBadge, StageBadge } from "../../_components/badges";
 import { EmailPersonalisation, LeadEmails, LinkedInNote } from "../../_components/lead-emails";
+import { ReplyList } from "../../_components/replies";
 import { StageSelect } from "../../_components/stage-select";
 
 export const metadata: Metadata = { title: "Lead · Dashboard" };
@@ -15,7 +18,7 @@ export default function LeadPage({ params }: PageProps<"/dashboard/leads/[id]">)
   return (
     <div className="space-y-6">
       <Link
-        href="/dashboard"
+        href="/dashboard/leads"
         className="text-sm text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
       >
         ← All leads
@@ -29,10 +32,17 @@ export default function LeadPage({ params }: PageProps<"/dashboard/leads/[id]">)
 
 async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const lead = await getLead(decodeURIComponent(id));
+  const leadId = decodeURIComponent(id);
+  const [lead, replies] = await Promise.all([
+    getLead(leadId),
+    // Replies need migration 005; the page still works without it.
+    listReplies({ leadId }).catch(() => []),
+  ]);
   if (!lead) notFound();
 
   const status = callStatus(lead);
+  const estimate = estimatedValue(lead);
+  const unreadReplies = replies.filter((r) => !r.readAt).length;
 
   return (
     <>
@@ -90,6 +100,30 @@ async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
             </Card>
           )}
 
+          {replies.length > 0 && (
+            <section className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+                <h2 className="text-sm font-semibold">
+                  Replies
+                  {unreadReplies > 0 && (
+                    <span className="font-normal text-zinc-500 dark:text-zinc-400"> · {unreadReplies} unread</span>
+                  )}
+                </h2>
+                {unreadReplies > 1 && (
+                  <form action={markLeadRepliesRead.bind(null, lead.id)}>
+                    <button
+                      type="submit"
+                      className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                    >
+                      Mark all read
+                    </button>
+                  </form>
+                )}
+              </div>
+              <ReplyList replies={replies} />
+            </section>
+          )}
+
           <LeadEmails lead={lead} />
 
           <Card title="Internal notes">
@@ -112,12 +146,39 @@ async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
         </div>
 
         <div className="space-y-6">
+          <Card title="Deal">
+            <form action={saveDealValue.bind(null, lead.id)} className="space-y-3 p-4">
+              <label className="block space-y-1">
+                <span className="text-sm font-medium">Deal value (USD)</span>
+                <input
+                  name="dealValue"
+                  inputMode="decimal"
+                  defaultValue={lead.dealValue ?? ""}
+                  placeholder={estimate != null ? String(estimate) : "e.g. 12000"}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm tabular-nums dark:border-zinc-700 dark:bg-zinc-950"
+                />
+                <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                  {estimate != null
+                    ? `Leave empty to use ${formatMoney(estimate)}, the middle of their investment range.`
+                    : "Their investment range doesn't give a number, so this lead counts as $0 until you set one."}
+                </span>
+              </label>
+              <button
+                type="submit"
+                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              >
+                Save value
+              </button>
+            </form>
+          </Card>
+
           <Card title="Call">
             <dl className="divide-y divide-zinc-100 dark:divide-zinc-800">
               <Row label="Starts">{formatDateTime(lead.startTime)}</Row>
               <Row label="Ends">{formatDateTime(lead.endTime)}</Row>
               <Row label="Their time zone">{lead.timeZone}</Row>
               <Row label="Event">{lead.eventTitle}</Row>
+              <Row label="Booked">{formatDateTime(lead.bookedAt)}</Row>
               <Row label="Meeting link">
                 {lead.meetingUrl ? (
                   <a

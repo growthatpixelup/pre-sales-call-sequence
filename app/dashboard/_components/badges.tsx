@@ -29,19 +29,27 @@ export const STAGE_LABELS: Record<LeadStage, string> = {
   new: "New",
   contacted: "Contacted",
   qualified: "Qualified",
+  proposal: "Proposal sent",
   won: "Won",
   lost: "Lost",
+  closed: "Closed",
 };
 
 const STAGE_STYLES: Record<LeadStage, string> = {
   new: "bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-900",
   contacted: "bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-900",
   qualified: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900",
+  proposal: "bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:ring-indigo-900",
   won: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-900",
-  lost: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
+  lost: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-900",
+  closed: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
 };
 
 const EMAIL_STATUS_STYLES: Record<EmailStatus, { label: string; className: string }> = {
+  draft: {
+    label: "Draft: needs sending",
+    className: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900",
+  },
   scheduled: {
     label: "Scheduled",
     className: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:ring-blue-900",

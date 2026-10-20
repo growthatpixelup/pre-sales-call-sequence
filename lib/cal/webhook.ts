@@ -67,6 +67,7 @@ export function bookingFromWebhook(payload: Json, fallbackStatus: BookingStatus)
       (location && /^https?:\/\//.test(location) ? location : null),
     bookingStatus: toStatus(payload.status, fallbackStatus),
     cancellationReason: str(payload.cancellationReason),
+    bookedAt: str(payload.createdAt),
     attendeeName: str(attendee?.name),
     attendeeEmail: str(attendee?.email),
     attendeePhone: str(attendee?.phoneNumber) ?? str(payload.smsReminderNumber),

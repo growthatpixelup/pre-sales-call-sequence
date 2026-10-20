@@ -62,7 +62,8 @@ export async function POST(request: Request) {
         if (rescheduled) await cancelPending(lead.id, "Call was rescheduled", ["no_show"]);
         await scheduleSequence(lead, { rescheduled });
       });
-      // Send the confirmation now rather than waiting for the next cron run.
+      // Send anything already due (the confirmation, when the call is less than an hour away)
+      // rather than waiting for the next cron run.
       await emailStep("sending due emails", () => processDueEmails());
       break;
     }

@@ -1,5 +1,8 @@
-export const LEAD_STAGES = ["new", "contacted", "qualified", "won", "lost"] as const;
+export const LEAD_STAGES = ["new", "contacted", "qualified", "proposal", "won", "lost", "closed"] as const;
 export type LeadStage = (typeof LEAD_STAGES)[number];
+
+/** Stages where the deal is still being worked on. */
+export const OPEN_STAGES: LeadStage[] = ["new", "contacted", "qualified", "proposal"];
 
 export type BookingStatus = "accepted" | "pending" | "cancelled" | "rejected";
 
@@ -66,8 +69,14 @@ export interface Lead {
   bookingStatus: BookingStatus;
   cancellationReason: string | null;
 
+  /** When the call was booked in Cal.com. */
+  bookedAt: string;
+
   // Tracking (owned by the dashboard, never overwritten by Cal.com)
   stage: LeadStage;
+  stageChangedAt: string | null;
+  /** Agreed deal value (USD). Analytics fall back to the investment range when unset. */
+  dealValue: number | null;
   internalNotes: string;
   emailSettings: EmailSettings;
   events: LeadEvent[];
@@ -96,6 +105,8 @@ export interface BookingInput {
   meetingUrl: string | null;
   bookingStatus: BookingStatus;
   cancellationReason: string | null;
+  /** When the booking was made, if Cal.com says. */
+  bookedAt: string | null;
   attendeeName: string | null;
   attendeeEmail: string | null;
   attendeePhone: string | null;

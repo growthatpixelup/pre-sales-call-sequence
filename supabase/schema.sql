@@ -1,5 +1,6 @@
 -- Run once in Supabase: Dashboard → SQL Editor → New query → paste → Run.
--- For a new project, then run supabase/migrations/003_email_sequence.sql and 004_email_cron.sql.
+-- For a new project, then run supabase/migrations/003_email_sequence.sql, 004_email_cron.sql and
+-- 005_pipeline_and_replies.sql.
 -- (002 is already included below.)
 
 create table if not exists public.leads (

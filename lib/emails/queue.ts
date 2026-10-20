@@ -6,7 +6,7 @@ import type { EmailStep, PlannedEmail } from "./schedule";
 
 /** Email queue in the `lead_emails` table (see supabase/migrations/003_email_sequence.sql). */
 
-export type EmailStatus = "scheduled" | "sending" | "sent" | "skipped" | "cancelled" | "failed";
+export type EmailStatus = "draft" | "scheduled" | "sending" | "sent" | "skipped" | "cancelled" | "failed";
 
 export interface LeadEmail {
   id: string;
@@ -81,7 +81,7 @@ export async function applyPlan(lead: Lead, plan: PlannedEmail[], resend: EmailS
     .map((p) => ({
       lead_id: lead.id,
       step: p.step,
-      status: p.dueAt ? "scheduled" : "skipped",
+      status: p.draft ? "draft" : p.dueAt ? "scheduled" : "skipped",
       due_at: p.dueAt?.toISOString() ?? null,
       note: p.skipReason ?? null,
       attempts: 0,
@@ -105,16 +105,48 @@ export async function queueNow(leadId: string, step: EmailStep, note: string | n
   return true;
 }
 
-/** Cancels emails that haven't gone out yet. */
+/** Cancels emails that haven't gone out yet, drafts included. */
 export async function cancelPending(leadId: string, reason: string, steps?: EmailStep[]) {
   let query = supabase()
     .from("lead_emails")
     .update({ status: "cancelled", note: reason })
     .eq("lead_id", leadId)
-    .eq("status", "scheduled");
+    .in("status", ["scheduled", "draft"]);
   if (steps) query = query.in("step", steps);
   const { error } = await query;
   if (error) fail("cancel emails", error);
+}
+
+/** Drafts (Email 1) waiting to be personalised and sent, for calls that haven't started. */
+export async function listOpenDrafts(): Promise<LeadEmail[]> {
+  const { data, error } = await supabase()
+    .from("lead_emails")
+    .select("*, leads!inner(start_time, booking_status)")
+    .eq("status", "draft")
+    .eq("leads.booking_status", "accepted")
+    .gt("leads.start_time", new Date().toISOString())
+    .order("due_at");
+  if (error) fail("load drafts", error);
+  return (data as Row[]).map(fromRow);
+}
+
+/** Drafts nobody sent before the call started are marked skipped. */
+export async function expireDrafts() {
+  const db = supabase();
+  const { data, error } = await db
+    .from("lead_emails")
+    .select("id, leads!inner(start_time)")
+    .eq("status", "draft")
+    .lte("leads.start_time", new Date().toISOString());
+  if (error) fail("load expired drafts", error);
+  const ids = (data as { id: string }[]).map((r) => r.id);
+  if (!ids.length) return;
+  const { error: updateError } = await db
+    .from("lead_emails")
+    .update({ status: "skipped", note: "Call started before it was sent" })
+    .in("id", ids)
+    .eq("status", "draft");
+  if (updateError) fail("expire drafts", updateError);
 }
 
 /**

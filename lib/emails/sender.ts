@@ -9,6 +9,7 @@ import {
   applyPlan,
   cancelPending,
   claimDueEmails,
+  expireDrafts,
   listLeadEmails,
   markCancelled,
   markFailed,
@@ -18,7 +19,7 @@ import {
   queueNow,
   type LeadEmail,
 } from "./queue";
-import { PRE_CALL_STEPS, STEP_LABELS, planSequence } from "./schedule";
+import { PRE_CALL_STEPS, STEP_LABELS, planHowWeWork, planSequence } from "./schedule";
 import { renderEmail, type EmailContext } from "./templates";
 
 let resend: Resend | null = null;
@@ -42,10 +43,13 @@ export function emailSetupProblems(): string[] {
  */
 export async function scheduleSequence(lead: Lead, { rescheduled = false } = {}) {
   if (lead.bookingStatus !== "accepted") return;
-  const sent = new Set((await listLeadEmails(lead.id)).filter((e) => e.status === "sent").map((e) => e.step));
+  const sentEmails = (await listLeadEmails(lead.id)).filter((e) => e.status === "sent");
+  const sent = new Set(sentEmails.map((e) => e.step));
+  const caseStudySentAt = sentEmails.find((e) => e.step === "case_study")?.sentAt;
   const resend = rescheduled ? PRE_CALL_STEPS.filter((s) => s !== "case_study" && s !== "how_we_work") : [];
   for (const step of resend) sent.delete(step);
-  await applyPlan(lead, planSequence(lead, new Date(), sent), resend);
+  const plan = planSequence(lead, new Date(), sent, caseStudySentAt ? new Date(caseStudySentAt) : null);
+  await applyPlan(lead, plan, resend);
 }
 
 export async function cancelSequence(leadId: string, reason: string) {
@@ -107,10 +111,13 @@ async function sendOne(email: LeadEmail, problems: string[]) {
   if (error || !data) return markFailed(email, error?.message ?? "Unknown Resend error");
   await markSent(email.id, data.id, rendered.subject);
   await addLeadEvent(lead.id, "email_sent", STEP_LABELS[email.step]);
+  // Email 2 follows the morning after Email 1, which is sent by hand.
+  if (email.step === "case_study") await applyPlan(lead, [planHowWeWork(lead, new Date())]);
 }
 
 /** Sends every email that's due. Called every minute by the scheduler. */
 export async function processDueEmails() {
+  await expireDrafts();
   const problems = emailSetupProblems();
   const due = await claimDueEmails();
   const results = { processed: due.length, errors: 0 };

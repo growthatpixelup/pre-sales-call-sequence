@@ -36,7 +36,10 @@ interface LeadRow {
   meeting_url: string | null;
   booking_status: BookingStatus;
   cancellation_reason: string | null;
+  booked_at: string;
   stage: LeadStage;
+  stage_changed_at: string | null;
+  deal_value: number | string | null;
   internal_notes: string;
   source: Lead["source"];
   created_at: string;
@@ -78,7 +81,12 @@ function fromRow(row: LeadRow, events: EventRow[] = []): Lead {
     meetingUrl: row.meeting_url,
     bookingStatus: row.booking_status,
     cancellationReason: row.cancellation_reason,
+    // Leads saved before migration 005 have no booked_at.
+    bookedAt: row.booked_at ?? row.created_at,
     stage: row.stage,
+    stageChangedAt: row.stage_changed_at,
+    // Postgres numerics can arrive as strings.
+    dealValue: row.deal_value == null ? null : Number(row.deal_value),
     internalNotes: row.internal_notes,
     emailSettings: row.email_settings ?? {},
     events: events.map((e): LeadEvent => ({ type: e.type, at: e.at, ...(e.detail ? { detail: e.detail } : {}) })),
@@ -127,9 +135,14 @@ async function addEvent(leadId: string, type: string, detail?: string | null) {
 }
 
 async function exists(id: string) {
-  const { data, error } = await supabase().from("leads").select("id").eq("id", id).maybeSingle();
+  return Boolean(await bookedAtOf(id));
+}
+
+/** The lead's booked_at, or null if there's no such lead. */
+async function bookedAtOf(id: string): Promise<string | null> {
+  const { data, error } = await supabase().from("leads").select("booked_at").eq("id", id).maybeSingle();
   if (error) fail("look up lead", error);
-  return Boolean(data);
+  return data ? (data.booked_at as string) : null;
 }
 
 export async function listLeads(): Promise<Lead[]> {
@@ -162,18 +175,25 @@ export async function upsertFromBooking(
   opts: { source: Lead["source"]; eventType: string; previousId?: string | null },
 ): Promise<void> {
   const db = supabase();
-  const columns = calColumns(booking);
+  const columns: Partial<LeadRow> = calColumns(booking);
 
-  let found = await exists(booking.id);
+  let bookedAt = await bookedAtOf(booking.id);
 
-  if (!found && opts.previousId && (await exists(opts.previousId))) {
-    // lead_events follow via "on update cascade".
-    const { error } = await db.from("leads").update({ id: booking.id }).eq("id", opts.previousId);
-    if (error) fail("move rescheduled lead", error);
-    found = true;
+  if (!bookedAt && opts.previousId) {
+    bookedAt = await bookedAtOf(opts.previousId);
+    if (bookedAt) {
+      // lead_events follow via "on update cascade".
+      const { error } = await db.from("leads").update({ id: booking.id }).eq("id", opts.previousId);
+      if (error) fail("move rescheduled lead", error);
+    }
   }
 
-  if (!found) {
+  // The first booking time wins: a reschedule is a new Cal.com booking with a later createdAt.
+  if (booking.bookedAt && (!bookedAt || Date.parse(booking.bookedAt) < Date.parse(bookedAt))) {
+    columns.booked_at = booking.bookedAt;
+  }
+
+  if (!bookedAt) {
     const { error } = await db.from("leads").insert({ id: booking.id, ...columns, source: opts.source });
     if (!error) {
       await addEvent(booking.id, opts.eventType);
@@ -217,7 +237,7 @@ export async function updateEmailSettings(id: string, settings: EmailSettings): 
 
 export async function updateLeadTracking(
   id: string,
-  changes: { stage?: LeadStage; internalNotes?: string },
+  changes: { stage?: LeadStage; internalNotes?: string; dealValue?: number | null },
 ): Promise<void> {
   const db = supabase();
   const update: Partial<LeadRow> = {};
@@ -229,10 +249,12 @@ export async function updateLeadTracking(
     if (!data) return;
     if (data.stage !== changes.stage) {
       update.stage = changes.stage;
+      update.stage_changed_at = new Date().toISOString();
       previousStage = data.stage as LeadStage;
     }
   }
   if (changes.internalNotes !== undefined) update.internal_notes = changes.internalNotes;
+  if (changes.dealValue !== undefined) update.deal_value = changes.dealValue;
   if (!Object.keys(update).length) return;
 
   const { error } = await db.from("leads").update(update).eq("id", id);

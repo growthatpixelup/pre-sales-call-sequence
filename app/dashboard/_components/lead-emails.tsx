@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { emailConfig } from "@/lib/emails/config";
 import { listLeadEmails } from "@/lib/emails/queue";
 import { EMAIL_STEPS, STEP_LABELS } from "@/lib/emails/schedule";
 import { emailSetupProblems } from "@/lib/emails/sender";
@@ -12,6 +11,8 @@ import { CopyButton } from "./copy-button";
 
 const BUTTON =
   "rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800";
+const PRIMARY_BUTTON =
+  "rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
 const INPUT =
   "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950";
 
@@ -61,9 +62,15 @@ export async function LeadEmails({ lead }: { lead: Lead }) {
               ? `Sent ${formatDateTime(email.sentAt)}`
               : status === "scheduled" && email?.dueAt
                 ? `Due ${formatDateTime(email.dueAt)}`
-                : step === "no_show" && !email
-                  ? "Sends if they haven't joined 5 minutes in"
-                  : null;
+                : status === "draft"
+                  ? `Personalise it, then send it yourself${email?.dueAt ? `. Best sent around ${formatDateTime(email.dueAt)}` : ""}.`
+                  : step === "no_show" && !email
+                    ? "Sends if they haven't joined 5 minutes in"
+                    : step === "how_we_work" && !email
+                      ? "Goes out at 9 AM (their time) the morning after Email 1 is sent"
+                      : null;
+          // Email 1 is always sent by hand, from its own page.
+          const manual = step === "case_study";
           return (
             <li key={step} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
@@ -75,20 +82,26 @@ export async function LeadEmails({ lead }: { lead: Lead }) {
                 {email?.note && <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{email.note}</p>}
               </div>
               <div className="flex shrink-0 gap-2">
-                <Link href={`/dashboard/leads/${lead.id}/emails/${step}`} className={BUTTON}>
-                  Preview
-                </Link>
-                {status !== "sent" && status !== "sending" && (
+                {manual && upcoming && status !== "sent" && status !== "sending" ? (
+                  <Link href={`/dashboard/leads/${lead.id}/emails/${step}`} className={PRIMARY_BUTTON}>
+                    Personalise &amp; send
+                  </Link>
+                ) : (
+                  <Link href={`/dashboard/leads/${lead.id}/emails/${step}`} className={BUTTON}>
+                    Preview
+                  </Link>
+                )}
+                {!manual && status !== "sent" && status !== "sending" && (
                   <form action={sendEmailNow.bind(null, lead.id, step)}>
                     <button type="submit" className={BUTTON}>
                       Send now
                     </button>
                   </form>
                 )}
-                {status === "scheduled" && (
+                {(status === "scheduled" || status === "draft") && (
                   <form action={cancelEmail.bind(null, lead.id, step)}>
                     <button type="submit" className={BUTTON}>
-                      Cancel
+                      {status === "draft" ? "Don't send" : "Cancel"}
                     </button>
                   </form>
                 )}
@@ -111,32 +124,9 @@ export function EmailPersonalisation({ lead }: { lead: Lead }) {
         Email personalisation
       </h2>
       <form action={saveEmailSettings.bind(null, lead.id)} className="space-y-4 p-4">
-        <label className="block space-y-1">
-          <span className="text-sm font-medium">Case study (Email 1)</span>
-          <select name="caseStudyId" defaultValue={settings.caseStudyId} className={INPUT}>
-            {emailConfig.caseStudies.map((cs) => (
-              <option key={cs.id} value={cs.id}>
-                {cs.client === "TODO" ? cs.id : `${cs.client}: ${cs.result}`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block space-y-1">
-          <span className="text-sm font-medium">Company line (Email 1)</span>
-          <textarea name="companyLine" rows={2} defaultValue={settings.companyLine} className={INPUT} />
-          <span className="block text-xs text-zinc-500 dark:text-zinc-400">
-            One line linking them to the case study, based on a real fact (a raise, a launch, their YC batch, a
-            booking form answer). Under 20 words, no praise, no guesses. E.g. “Feels close to where you are right
-            now, fresh off your seed round.” Leave empty to skip the line.
-          </span>
-        </label>
-        <label className="block space-y-1">
-          <span className="text-sm font-medium">Closing question (Email 1)</span>
-          <textarea name="question" rows={4} defaultValue={settings.question} className={INPUT} />
-          <span className="block text-xs text-zinc-500 dark:text-zinc-400">
-            {"{company}"} becomes their business name. Alternative: “{emailConfig.discoveryQuestions.buyer}”
-          </span>
-        </label>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Email 1 (case study) is personalised on its own page: use “Personalise &amp; send” in the Emails list.
+        </p>
         <label className="block space-y-1">
           <span className="text-sm font-medium">Who&apos;s joining (Email 3)</span>
           <input name="team" defaultValue={settings.team} className={INPUT} />

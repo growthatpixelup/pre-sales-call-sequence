@@ -22,9 +22,10 @@ export const STEP_LABELS: Record<EmailStep, string> = {
   no_show: "Reminder: no-show nudge",
 };
 
+/** A `draft` waits for someone to send it from the dashboard; its `dueAt` is only a suggestion. */
 export type PlannedEmail =
-  | { step: EmailStep; dueAt: Date; skipReason?: undefined }
-  | { step: EmailStep; dueAt: null; skipReason: string };
+  | { step: EmailStep; dueAt: Date; skipReason?: undefined; draft?: boolean }
+  | { step: EmailStep; dueAt: null; skipReason: string; draft?: undefined };
 
 /** Steps that only make sense before the call starts. */
 export const PRE_CALL_STEPS: EmailStep[] = [
@@ -38,9 +39,15 @@ export const PRE_CALL_STEPS: EmailStep[] = [
 /**
  * Works out when each email should go, following the sequence doc. Times are in the guest's
  * time zone. `bookedAt` is when the booking first arrived; `now` is when we're planning (they
- * differ when re-planning after a reschedule). `alreadySent` lists steps that went out before.
+ * differ when re-planning after a reschedule). `alreadySent` lists steps that went out before,
+ * and `caseStudySentAt` is when Email 1 went out, if it did.
  */
-export function planSequence(lead: Lead, now = new Date(), alreadySent = new Set<EmailStep>()): PlannedEmail[] {
+export function planSequence(
+  lead: Lead,
+  now = new Date(),
+  alreadySent = new Set<EmailStep>(),
+  caseStudySentAt: Date | null = null,
+): PlannedEmail[] {
   const tz = safeTimeZone(lead.timeZone);
   const start = new Date(lead.startTime);
   const bookedAt = new Date(lead.createdAt);
@@ -54,8 +61,10 @@ export function planSequence(lead: Lead, now = new Date(), alreadySent = new Set
     return plan;
   }
 
-  // Booking confirmation: straight away.
-  const confirmationAt = bookedAt > now ? bookedAt : now;
+  // Booking confirmation: 15 minutes after booking. If the call is close, send it straight away.
+  let confirmationAt = new Date(bookedAt.getTime() + 15 * MINUTE);
+  if (confirmationAt.getTime() >= start.getTime() - HOUR) confirmationAt = bookedAt;
+  if (confirmationAt < now) confirmationAt = now;
   at("confirmation", confirmationAt);
 
   // Email 3: 8 AM on the call day, or 6 PM the day before if the call is before noon. Skipped
@@ -71,35 +80,23 @@ export function planSequence(lead: Lead, now = new Date(), alreadySent = new Set
         ? "Would go out before the booking confirmation"
         : null;
 
-  // Email 1: 24 hours after booking, moved out of quiet hours. Skip if the call is the next day
-  // (or sooner), or if it would land after Email 3.
-  const caseStudyAt = outOfQuietHours(new Date(bookedAt.getTime() + DAY), tz);
-  let caseStudySent = alreadySent.has("case_study");
-  if (caseStudySent) {
+  // Email 1 is personalised and sent by hand from the dashboard, so it's planned as a draft. The
+  // suggested time is 24 hours after booking, moved out of quiet hours, and before Email 3.
+  // Skipped if the call is the next day (or sooner).
+  if (alreadySent.has("case_study")) {
     // Already went out; nothing to plan.
   } else if (callDay <= addDays(localDate(bookedAt, tz), 1)) {
     skip("case_study", "Call is the day after booking or sooner");
-  } else if (caseStudyAt < now) {
-    skip("case_study", "Send time has passed");
-  } else if (!expectSkip && caseStudyAt >= expectAt) {
-    skip("case_study", "Would go out after Email 3");
   } else {
-    at("case_study", caseStudyAt);
-    caseStudySent = true;
+    let suggestedAt = outOfQuietHours(new Date(bookedAt.getTime() + DAY), tz);
+    if (!expectSkip && suggestedAt >= expectAt) suggestedAt = new Date(expectAt.getTime() - HOUR);
+    if (suggestedAt < now) suggestedAt = now;
+    plan.push({ step: "case_study", dueAt: suggestedAt, draft: true });
   }
 
-  // Email 2: 9 AM the day after Email 1, only if Email 1 goes out. Skip if the call is that day.
-  const howWeWorkDay = addDays(localDate(caseStudyAt, tz), 1);
-  const howWeWorkAt = atLocalTime(howWeWorkDay, emailConfig.howWeWorkHour, tz);
-  if (!caseStudySent) {
-    skip("how_we_work", "Email 1 isn't going out");
-  } else if (callDay <= howWeWorkDay) {
-    skip("how_we_work", "Call is on or before the morning after Email 1");
-  } else if (howWeWorkAt < now) {
-    skip("how_we_work", "Send time has passed");
-  } else {
-    at("how_we_work", howWeWorkAt);
-  }
+  // Email 2 is planned once Email 1 has gone out (see planHowWeWork). Until then it has no row.
+  if (caseStudySentAt) plan.push(planHowWeWork(lead, caseStudySentAt, now));
+  else if (plan.some((p) => p.step === "case_study" && !p.draft)) skip("how_we_work", "Email 1 isn't going out");
 
   if (expectSkip) skip("what_to_expect", expectSkip);
   else at("what_to_expect", expectAt);
@@ -112,6 +109,17 @@ export function planSequence(lead: Lead, now = new Date(), alreadySent = new Set
   } else at("reminder_1h", reminderAt);
 
   return plan;
+}
+
+/** Email 2: 9 AM (their time) the day after Email 1 went out. Skipped if the call is that day or sooner. */
+export function planHowWeWork(lead: Lead, caseStudySentAt: Date, now = new Date()): PlannedEmail {
+  const tz = safeTimeZone(lead.timeZone);
+  const callDay = localDate(new Date(lead.startTime), tz);
+  const day = addDays(localDate(caseStudySentAt, tz), 1);
+  const dueAt = atLocalTime(day, emailConfig.howWeWorkHour, tz);
+  if (callDay <= day) return { step: "how_we_work", dueAt: null, skipReason: "Call is on or before the morning after Email 1" };
+  if (dueAt < now) return { step: "how_we_work", dueAt: null, skipReason: "Send time has passed" };
+  return { step: "how_we_work", dueAt };
 }
 
 /** Moves a send inside quiet hours (9 PM to 8 AM local) to the next 8 AM. */

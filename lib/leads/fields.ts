@@ -89,7 +89,17 @@ export function bookingToLeadFields(
   booking: BookingInput,
 ): Omit<
   Lead,
-  "legacy" | "stage" | "internalNotes" | "emailSettings" | "events" | "source" | "createdAt" | "updatedAt"
+  | "legacy"
+  | "bookedAt"
+  | "stage"
+  | "stageChangedAt"
+  | "dealValue"
+  | "internalNotes"
+  | "emailSettings"
+  | "events"
+  | "source"
+  | "createdAt"
+  | "updatedAt"
 > {
   const mapped: Partial<Record<MappedField, string | null>> = {};
   const extraFields: ExtraField[] = [];
