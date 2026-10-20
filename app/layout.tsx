@@ -8,10 +8,10 @@ const inter = Inter({
   weight: ["400", "500"],
 });
 
+// Variable font: a fixed weight list for Inter Tight breaks the Turbopack production build.
 const interTight = Inter_Tight({
   variable: "--font-inter-tight",
   subsets: ["latin"],
-  weight: ["400", "500"],
 });
 
 const jetbrainsMono = JetBrains_Mono({

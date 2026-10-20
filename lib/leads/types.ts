@@ -1,8 +1,9 @@
-export const LEAD_STAGES = ["new", "contacted", "qualified", "proposal", "won", "lost", "closed"] as const;
+// "payment" = deal agreed, waiting on their payment (supabase/migrations/006_payment_stage.sql).
+export const LEAD_STAGES = ["new", "contacted", "qualified", "proposal", "payment", "won", "lost", "closed"] as const;
 export type LeadStage = (typeof LEAD_STAGES)[number];
 
-/** Stages where the deal is still being worked on. */
-export const OPEN_STAGES: LeadStage[] = ["new", "contacted", "qualified", "proposal"];
+/** Stages where the deal is still being worked on, or its money hasn't come in yet. */
+export const OPEN_STAGES: LeadStage[] = ["new", "contacted", "qualified", "proposal", "payment"];
 
 export type BookingStatus = "accepted" | "pending" | "cancelled" | "rejected";
 

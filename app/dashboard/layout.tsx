@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { unreadReplyCount } from "@/lib/emails/replies";
 import { loadTasks } from "@/lib/tasks";
@@ -44,6 +45,8 @@ async function UnreadCount() {
 }
 
 async function TaskCount() {
+  // Which tasks are due depends on the current time.
+  await connection();
   const count = await loadTasks(new Date())
     .then(({ tasks }) => tasks.length)
     .catch(() => 0);

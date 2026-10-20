@@ -390,7 +390,8 @@ export function buildAnalytics(
     const inStage = liveInRange.filter((l) => l.stage === stage);
     return { stage, count: inStage.length, value: sumValues(inStage) };
   });
-  const won = liveInRange.filter((l) => l.stage === "won").length;
+  // A deal waiting on payment is agreed, so it counts as a win here.
+  const won = liveInRange.filter((l) => l.stage === "won" || l.stage === "payment").length;
   const lost = liveInRange.filter((l) => l.stage === "lost").length;
 
   return {
