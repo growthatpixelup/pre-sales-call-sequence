@@ -19,13 +19,13 @@ export function BookingsChart({ buckets, unit }: { buckets: Bucket[]; unit: "day
   return (
     <div>
       {comparing && (
-        <div className="mb-3 flex flex-wrap gap-4 text-xs text-zinc-600 dark:text-zinc-400">
+        <div className="mono-label mb-4 flex flex-wrap gap-5">
           <span className="flex items-center gap-1.5">
-            <span className="size-2.5 rounded-sm bg-[#2a78d6] dark:bg-[#3987e5]" aria-hidden />
+            <span className="size-2.5 bg-blue" aria-hidden />
             This period
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-0.5 w-3 rounded-full bg-[#eb6834] dark:bg-[#d95926]" aria-hidden />
+            <span className="h-0.5 w-3 bg-muted" aria-hidden />
             Comparison period
           </span>
         </div>
@@ -33,7 +33,7 @@ export function BookingsChart({ buckets, unit }: { buckets: Bucket[]; unit: "day
 
       <div className="flex gap-2">
         {/* Y axis */}
-        <div className="relative h-56 w-6 shrink-0 text-right text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400" aria-hidden>
+        <div className="relative h-56 w-6 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted" aria-hidden>
           {ticks.map((t) => (
             <span key={t} className="absolute right-0 translate-y-1/2" style={{ bottom: `${pct(t)}%` }}>
               {t}
@@ -47,7 +47,7 @@ export function BookingsChart({ buckets, unit }: { buckets: Bucket[]; unit: "day
             {ticks.map((t) => (
               <div
                 key={t}
-                className="absolute inset-x-0 border-t border-zinc-200 dark:border-zinc-800"
+                className="absolute inset-x-0 border-t border-line"
                 style={{ bottom: `${pct(t)}%` }}
                 aria-hidden
               />
@@ -66,12 +66,12 @@ export function BookingsChart({ buckets, unit }: { buckets: Bucket[]; unit: "day
                   onFocus={() => setActive(i)}
                   onBlur={() => setActive(null)}
                   className={`relative flex h-full flex-1 items-end justify-center px-px outline-none ${
-                    active === i ? "bg-zinc-100/70 dark:bg-zinc-800/50" : ""
+                    active === i ? "bg-panel" : ""
                   }`}
                 >
                   {b.booked > 0 && (
                     <div
-                      className="w-full max-w-6 rounded-t bg-[#2a78d6] dark:bg-[#3987e5]"
+                      className={`w-full max-w-6 ${active === i ? "bg-blue-hover" : "bg-blue"}`}
                       style={{ height: `${pct(b.booked)}%` }}
                     />
                   )}
@@ -89,10 +89,10 @@ export function BookingsChart({ buckets, unit }: { buckets: Bucket[]; unit: "day
               >
                 <polyline
                   fill="none"
-                  className="stroke-[#eb6834] dark:stroke-[#d95926]"
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
+                  className="stroke-muted"
+                  strokeWidth={1.6}
+                  strokeDasharray="4 4"
+                  strokeLinejoin="miter"
                   vectorEffect="non-scaling-stroke"
                   points={buckets
                     .map((b, i) => (b.previous == null ? null : `${i + 0.5},${100 - pct(b.previous)}`))
@@ -105,22 +105,22 @@ export function BookingsChart({ buckets, unit }: { buckets: Bucket[]; unit: "day
             {/* Tooltip */}
             {hovered && active != null && (
               <div
-                className="pointer-events-none absolute -top-2 z-10 w-max rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs shadow-md dark:border-zinc-700 dark:bg-zinc-900"
+                className="pointer-events-none absolute -top-2 z-10 w-max border border-line-2 bg-panel px-3 py-2 text-xs"
                 style={{
                   left: `${((active + 0.5) / buckets.length) * 100}%`,
                   transform: `translate(${active / buckets.length > 0.7 ? "-100%" : active / buckets.length < 0.3 ? "0" : "-50%"}, -100%)`,
                 }}
               >
                 <div className="flex items-center gap-2">
-                  <span className="h-0.5 w-3 rounded-full bg-[#2a78d6] dark:bg-[#3987e5]" />
-                  <span className="text-sm font-semibold tabular-nums">{hovered.booked}</span>
-                  <span className="text-zinc-500 dark:text-zinc-400">{hovered.label}</span>
+                  <span className="h-0.5 w-3 bg-blue" />
+                  <span className="font-display text-sm font-medium tabular-nums">{hovered.booked}</span>
+                  <span className="font-mono uppercase tracking-[0.06em] text-muted">{hovered.label}</span>
                 </div>
                 {hovered.previous != null && (
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="h-0.5 w-3 rounded-full bg-[#eb6834] dark:bg-[#d95926]" />
-                    <span className="text-sm font-semibold tabular-nums">{hovered.previous}</span>
-                    <span className="text-zinc-500 dark:text-zinc-400">{hovered.previousLabel}</span>
+                    <span className="h-0.5 w-3 bg-muted" />
+                    <span className="font-display text-sm font-medium tabular-nums">{hovered.previous}</span>
+                    <span className="font-mono uppercase tracking-[0.06em] text-muted">{hovered.previousLabel}</span>
                   </div>
                 )}
               </div>
@@ -128,7 +128,7 @@ export function BookingsChart({ buckets, unit }: { buckets: Bucket[]; unit: "day
           </div>
 
           {/* X axis */}
-          <div className="mt-2 flex text-[11px] text-zinc-500 dark:text-zinc-400" aria-hidden>
+          <div className="mt-2 flex font-mono text-[11px] text-muted" aria-hidden>
             {buckets.map((b, i) => (
               <div key={b.from} className="relative flex-1">
                 {showLabel(i) && (
@@ -142,24 +142,24 @@ export function BookingsChart({ buckets, unit }: { buckets: Bucket[]; unit: "day
         </div>
       </div>
 
-      <details className="mt-8">
-        <summary className="cursor-pointer text-xs text-zinc-500 dark:text-zinc-400">Show as table</summary>
-        <table className="mt-2 w-full text-left text-sm">
-          <thead className="text-xs text-zinc-500 dark:text-zinc-400">
+      <details className="mt-10">
+        <summary className="mono-label cursor-pointer hover:text-text">Show as table</summary>
+        <table className="table mt-3">
+          <thead>
             <tr>
-              <th className="py-1 pr-4 font-medium">{unit === "day" ? "Day" : unit === "week" ? "Week" : "Month"}</th>
-              <th className="py-1 pr-4 text-right font-medium">Booked</th>
-              {comparing && <th className="py-1 pr-4 font-medium">Comparison</th>}
-              {comparing && <th className="py-1 text-right font-medium">Booked</th>}
+              <th>{unit === "day" ? "Day" : unit === "week" ? "Week" : "Month"}</th>
+              <th className="text-right">Booked</th>
+              {comparing && <th>Comparison</th>}
+              {comparing && <th className="text-right">Booked</th>}
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-100 tabular-nums dark:divide-zinc-800">
+          <tbody className="tabular-nums">
             {buckets.map((b) => (
               <tr key={b.from}>
-                <td className="py-1 pr-4">{b.label}</td>
-                <td className="py-1 pr-4 text-right">{b.booked}</td>
-                {comparing && <td className="py-1 pr-4 text-zinc-500 dark:text-zinc-400">{b.previousLabel ?? "—"}</td>}
-                {comparing && <td className="py-1 text-right">{b.previous ?? "—"}</td>}
+                <td>{b.label}</td>
+                <td className="text-right">{b.booked}</td>
+                {comparing && <td className="text-muted">{b.previousLabel ?? "—"}</td>}
+                {comparing && <td className="text-right">{b.previous ?? "—"}</td>}
               </tr>
             ))}
           </tbody>

@@ -8,7 +8,7 @@ import { markRepliesRead } from "@/lib/emails/replies";
 import { EMAIL_STEPS, type EmailStep } from "@/lib/emails/schedule";
 import { processDueEmails, scheduleSequence } from "@/lib/emails/sender";
 import { defaultEmailSettings } from "@/lib/emails/templates";
-import { getLead, updateEmailSettings, updateLeadTracking } from "@/lib/leads/store";
+import { getLead, recordLinkedIn, updateEmailSettings, updateLeadTracking } from "@/lib/leads/store";
 import { LEAD_STAGES, type EmailSettings, type LeadStage } from "@/lib/leads/types";
 
 // The dashboard is protected by proxy.ts (DASHBOARD_PASSWORD); server actions are posted to
@@ -106,6 +106,16 @@ export async function markLeadRepliesRead(leadId: string) {
 
 export async function markAllRepliesRead() {
   await markRepliesRead();
+  refresh();
+}
+
+export async function markLinkedInSent(leadId: string) {
+  await recordLinkedIn(leadId, "linkedin_sent");
+  refresh();
+}
+
+export async function skipLinkedIn(leadId: string) {
+  await recordLinkedIn(leadId, "linkedin_skipped");
   refresh();
 }
 

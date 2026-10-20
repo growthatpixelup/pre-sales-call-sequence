@@ -130,6 +130,36 @@ export async function listOpenDrafts(): Promise<LeadEmail[]> {
   return (data as Row[]).map(fromRow);
 }
 
+/**
+ * Everything still waiting (drafts, scheduled, sending, failed), plus emails that were sent,
+ * skipped or cancelled since `since`. For the email health page.
+ */
+export async function listEmailActivity(since: Date): Promise<LeadEmail[]> {
+  const db = supabase();
+  const [open, recent] = await Promise.all([
+    db.from("lead_emails").select("*").in("status", ["draft", "scheduled", "sending", "failed"]).order("due_at").limit(1000),
+    db
+      .from("lead_emails")
+      .select("*")
+      .in("status", ["sent", "skipped", "cancelled"])
+      .gte("updated_at", since.toISOString())
+      .order("updated_at", { ascending: false })
+      .limit(1000),
+  ]);
+  if (open.error) fail("load queued emails", open.error);
+  if (recent.error) fail("load recent emails", recent.error);
+  return [...(open.data as Row[]), ...(recent.data as Row[])].map(fromRow);
+}
+
+/** Of these leads, the ones with no emails planned at all. */
+export async function leadsWithoutEmails(leadIds: string[]): Promise<Set<string>> {
+  if (!leadIds.length) return new Set();
+  const { data, error } = await supabase().from("lead_emails").select("lead_id").in("lead_id", leadIds);
+  if (error) fail("load lead emails", error);
+  const planned = new Set((data as { lead_id: string }[]).map((r) => r.lead_id));
+  return new Set(leadIds.filter((id) => !planned.has(id)));
+}
+
 /** Drafts nobody sent before the call started are marked skipped. */
 export async function expireDrafts() {
   const db = supabase();

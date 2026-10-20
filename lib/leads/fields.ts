@@ -21,14 +21,16 @@ type MappedField =
 const FIELD_MAP: Record<MappedField, { keys: string[]; label: RegExp }> = {
   name: { keys: ["name", "fullName", "full-name"], label: /^(your )?(full )?name$/i },
   email: { keys: ["email"], label: /^(your )?email( address)?$/i },
-  businessName: { keys: ["business-name", "businessName", "company"], label: /business name|company name/i },
+  // The discovery form asks for the company in Cal.com's built-in "title" question.
+  businessName: { keys: ["business-name", "businessName", "company", "title"], label: /business name|company name/i },
   businessWebsite: { keys: ["business-website", "businessWebsite", "website"], label: /website/i },
-  problem: { keys: ["problem"], label: /problem|looking to solve/i },
+  // "classification" is the discovery form's "what do you need help with" checklist.
+  problem: { keys: ["problem", "classification"], label: /problem|looking to solve/i },
   bookingReason: { keys: ["why-did-you-book-this-call", "reason"], label: /why did you book/i },
   capitalRaised: { keys: ["capital-raised", "capitalRaised"], label: /capital|raised/i },
   investmentRange: {
-    keys: ["investment-range", "investmentRange"],
-    label: /investment range|expected investment/i,
+    keys: ["investment-range", "investmentRange", "project-budget"],
+    label: /investment range|expected investment|budget/i,
   },
   referralSource: {
     keys: ["how-did-you-find-us", "referral", "source"],

@@ -107,7 +107,7 @@ export function resolveRange(
   const tz = dashboardTimeZone();
   const today = localDate(now, tz);
   let preset = (RANGE_PRESETS.some((p) => p.value === params.range) ? params.range : "28d") as RangePreset;
-  let compare = (COMPARE_MODES.some((c) => c.value === params.compare) ? params.compare : "previous") as CompareMode;
+  let compare = (COMPARE_MODES.some((c) => c.value === params.compare) ? params.compare : "none") as CompareMode;
 
   let current: DayRange;
   switch (preset) {
@@ -182,9 +182,11 @@ export function formatRange({ from, to }: DayRange) {
 const isLive = (lead: Lead) => lead.bookingStatus !== "cancelled" && lead.bookingStatus !== "rejected";
 
 export interface PeriodStats {
-  /** Calls booked in the period, including ones later cancelled. */
+  /** Calls booked in the period, including ones later cancelled. A rescheduled call counts once. */
   booked: number;
   cancelled: number;
+  /** Of the calls booked, how many were moved at least once. */
+  rescheduled: number;
   /** Calls held (accepted, ended) in the period. */
   completed: number;
   /** Value of calls booked in the period that weren't cancelled. */
@@ -196,7 +198,13 @@ export interface PeriodStats {
   wonValue: number;
 }
 
-function periodStats(leads: Lead[], range: DayRange, tz: string, now: number): PeriodStats {
+function periodStats(
+  leads: Lead[],
+  reschedules: Map<string, number>,
+  range: DayRange,
+  tz: string,
+  now: number,
+): PeriodStats {
   const b = bounds(range, tz);
   const booked = leads.filter((l) => within(l.bookedAt, b));
   const live = booked.filter(isLive);
@@ -204,6 +212,7 @@ function periodStats(leads: Lead[], range: DayRange, tz: string, now: number): P
   return {
     booked: booked.length,
     cancelled: booked.length - live.length,
+    rescheduled: booked.filter((l) => reschedules.has(l.id)).length,
     completed: leads.filter(
       (l) => l.bookingStatus === "accepted" && within(l.endTime, b) && Date.parse(l.endTime) <= now,
     ).length,
@@ -283,11 +292,99 @@ export interface StageRow {
   value: number;
 }
 
-export function buildAnalytics(leads: Lead[], range: ResolvedRange, nowMs: number) {
+/** Who is behind the period's numbers. Each list is soonest call first. */
+export interface Breakdown {
+  live: Lead[];
+  cancelled: Lead[];
+  /** With how many times each call was moved. */
+  rescheduled: { lead: Lead; times: number }[];
+  unpriced: Lead[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Attribution
+
+/** The channel groups behind "How did you find us?", in display order. */
+export const SOURCE_PILLARS = ["Social", "YC network", "Referrals", "Search & AI", "Other", "Not answered"] as const;
+export type SourcePillar = (typeof SOURCE_PILLARS)[number];
+
+const SOURCE_RULES: { test: RegExp; pillar: SourcePillar; source: string }[] = [
+  // YC before referrals: "Y Combinator Referral" is the YC network.
+  { test: /forum|bookface/i, pillar: "YC network", source: "YC forum" },
+  { test: /y ?combinator|\byc\b/i, pillar: "YC network", source: "YC referral" },
+  { test: /twitter|^x\b|\bx\.com/i, pillar: "Social", source: "X / Twitter" },
+  { test: /linked ?in/i, pillar: "Social", source: "LinkedIn" },
+  { test: /instagram|youtube|reddit|threads|facebook|tiktok/i, pillar: "Social", source: "Other social" },
+  { test: /past client|existing client|worked with/i, pillar: "Referrals", source: "Past client" },
+  { test: /referr|friend|word of mouth|recommend/i, pillar: "Referrals", source: "Referral" },
+  { test: /chatgpt|claude|perplexity|gemini|\bai\b|llm/i, pillar: "Search & AI", source: "AI search" },
+  { test: /google|search|bing/i, pillar: "Search & AI", source: "Google search" },
+];
+
+/** Groups a "How did you find us?" answer into a pillar and a tidy source name. */
+export function sourceOf(answer: string | null): { pillar: SourcePillar; source: string } {
+  const text = answer?.trim();
+  if (!text) return { pillar: "Not answered", source: "Not answered" };
+  const rule = SOURCE_RULES.find((r) => r.test.test(text));
+  return rule ? { pillar: rule.pillar, source: rule.source } : { pillar: "Other", source: text };
+}
+
+export interface AttributionRow {
+  pillar: SourcePillar;
+  /** Calls booked in the period. */
+  booked: number;
+  /** Of those, not cancelled. */
+  live: number;
+  won: number;
+  /** Value of the live ones. */
+  value: number;
+  sources: { source: string; booked: number; live: number }[];
+}
+
+function attribution(booked: Lead[]): AttributionRow[] {
+  return SOURCE_PILLARS.map((pillar) => {
+    const inPillar = booked.filter((l) => sourceOf(l.referralSource).pillar === pillar);
+    const live = inPillar.filter(isLive);
+    const sources = new Map<string, { source: string; booked: number; live: number }>();
+    for (const lead of inPillar) {
+      const { source } = sourceOf(lead.referralSource);
+      const row = sources.get(source) ?? { source, booked: 0, live: 0 };
+      row.booked++;
+      if (isLive(lead)) row.live++;
+      sources.set(source, row);
+    }
+    return {
+      pillar,
+      booked: inPillar.length,
+      live: live.length,
+      won: live.filter((l) => l.stage === "won").length,
+      value: sumValues(live),
+      sources: [...sources.values()].sort((a, b) => b.booked - a.booked),
+    };
+  });
+}
+
+/** `reschedules` is how many times each lead's call was moved (lead id → count). */
+export function buildAnalytics(
+  leads: Lead[],
+  range: ResolvedRange,
+  nowMs: number,
+  reschedules: Map<string, number> = new Map(),
+) {
   const tz = dashboardTimeZone();
   const b = bounds(range.current, tz);
   const bookedInRange = leads.filter((l) => within(l.bookedAt, b));
   const liveInRange = bookedInRange.filter(isLive);
+  const byCall = (x: Lead, y: Lead) => Date.parse(x.startTime) - Date.parse(y.startTime);
+  const breakdown: Breakdown = {
+    live: [...liveInRange].sort(byCall),
+    cancelled: bookedInRange.filter((l) => !isLive(l)).sort(byCall),
+    rescheduled: bookedInRange
+      .filter((l) => reschedules.has(l.id))
+      .sort(byCall)
+      .map((lead) => ({ lead, times: reschedules.get(lead.id)! })),
+    unpriced: liveInRange.filter((l) => leadValue(l) == null).sort(byCall),
+  };
 
   const stages: StageRow[] = LEAD_STAGES.map((stage) => {
     const inStage = liveInRange.filter((l) => l.stage === stage);
@@ -297,10 +394,12 @@ export function buildAnalytics(leads: Lead[], range: ResolvedRange, nowMs: numbe
   const lost = liveInRange.filter((l) => l.stage === "lost").length;
 
   return {
-    current: periodStats(leads, range.current, tz, nowMs),
-    previous: range.previous ? periodStats(leads, range.previous, tz, nowMs) : null,
+    current: periodStats(leads, reschedules, range.current, tz, nowMs),
+    previous: range.previous ? periodStats(leads, reschedules, range.previous, tz, nowMs) : null,
     series: bookingSeries(leads, range, tz),
     stages,
+    breakdown,
+    attribution: attribution(bookedInRange),
     winRate: won + lost ? won / (won + lost) : null,
   };
 }

@@ -2,9 +2,7 @@ import Link from "next/link";
 import { splitQuoted, type LeadReply } from "@/lib/emails/replies";
 import { formatDateTime } from "@/lib/format";
 import { markReplyRead } from "../actions";
-
-const BUTTON =
-  "rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800";
+import { Tag } from "./ui";
 
 /**
  * A list of replies. `leadNames` (lead id → name) adds a link to each reply's lead; `preview`
@@ -20,61 +18,59 @@ export function ReplyList({
   preview?: boolean;
 }) {
   return (
-    <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+    <ul className="list">
       {replies.map((reply) => {
         const { body, quoted } = splitQuoted(reply.text);
         const unread = !reply.readAt;
         const leadName = reply.leadId ? leadNames?.get(reply.leadId) : undefined;
         return (
-          <li key={reply.id} className="px-4 py-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
+          <li key={reply.id} className={unread ? "item-picked" : undefined}>
+            <div className="item">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  {unread && <span className="size-2 shrink-0 rounded-full bg-blue-600" aria-label="Unread" />}
-                  <span className={unread ? "font-semibold" : "font-medium"}>
-                    {reply.fromName ?? reply.fromEmail}
-                  </span>
-                  {reply.fromName && <span className="text-zinc-500 dark:text-zinc-400">{reply.fromEmail}</span>}
+                <p className="item-title m-0">{reply.subject || "(no subject)"}</p>
+                <p className="m-0 mt-1 text-[0.92rem] text-muted">
+                  <span className="text-text">{reply.fromName ?? reply.fromEmail}</span>
+                  {reply.fromName && <> · {reply.fromEmail}</>}
                   {leadNames &&
                     (reply.leadId ? (
-                      <Link
-                        href={`/dashboard/leads/${reply.leadId}`}
-                        className="text-blue-600 hover:underline dark:text-blue-400"
-                      >
-                        {leadName ?? "View lead"}
-                      </Link>
+                      <>
+                        {" · "}
+                        <Link href={`/dashboard/leads/${reply.leadId}`} className="link">
+                          {leadName ?? "View lead"}
+                        </Link>
+                      </>
                     ) : (
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400">Not matched to a lead</span>
+                      <> · Not matched to a lead</>
                     ))}
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {unread && <Tag>Unread</Tag>}
+                  <span className="mono-label">{formatDateTime(reply.receivedAt)}</span>
                 </div>
-                <p className="mt-0.5 text-sm text-zinc-700 dark:text-zinc-300">{reply.subject || "(no subject)"}</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">{formatDateTime(reply.receivedAt)}</p>
+                {preview ? (
+                  <p className="m-0 mt-3 line-clamp-2 text-[0.95rem] text-body">{body || "(empty)"}</p>
+                ) : (
+                  <>
+                    <p className="prose m-0 mt-4 whitespace-pre-wrap break-words">{body || "(empty)"}</p>
+                    {quoted && (
+                      <details className="mt-3">
+                        <summary className="mono-label cursor-pointer hover:text-text">Show quoted text</summary>
+                        <p className="m-0 mt-2 max-w-[68ch] whitespace-pre-wrap break-words border-l border-line-2 pl-4 text-[0.85rem] text-muted">
+                          {quoted}
+                        </p>
+                      </details>
+                    )}
+                  </>
+                )}
               </div>
               {unread && (
-                <form action={markReplyRead.bind(null, reply.id)}>
-                  <button type="submit" className={BUTTON}>
+                <form action={markReplyRead.bind(null, reply.id)} className="item-actions">
+                  <button type="submit" className="action">
                     Mark read
                   </button>
                 </form>
               )}
             </div>
-            {preview ? (
-              <p className="mt-2 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">{body || "(empty)"}</p>
-            ) : (
-              <>
-                <p className="mt-2 whitespace-pre-wrap break-words text-sm">{body || "(empty)"}</p>
-                {quoted && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-xs text-zinc-500 dark:text-zinc-400">
-                      Show quoted text
-                    </summary>
-                    <p className="mt-1 whitespace-pre-wrap break-words border-l-2 border-zinc-200 pl-3 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                      {quoted}
-                    </p>
-                  </details>
-                )}
-              </>
-            )}
           </li>
         );
       })}

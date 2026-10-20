@@ -1,28 +1,15 @@
 import type { EmailStatus } from "@/lib/emails/queue";
 import type { CallStatus } from "@/lib/format";
 import type { LeadStage } from "@/lib/leads/types";
+import { Tag, type Tone } from "./ui";
 
-const CALL_STATUS_STYLES: Record<CallStatus, { label: string; className: string }> = {
-  upcoming: {
-    label: "Upcoming",
-    className: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:ring-blue-900",
-  },
-  past: {
-    label: "Completed",
-    className: "bg-zinc-100 text-zinc-700 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700",
-  },
-  pending: {
-    label: "Awaiting confirmation",
-    className: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900",
-  },
-  cancelled: {
-    label: "Cancelled",
-    className: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-900",
-  },
-  rejected: {
-    label: "Rejected",
-    className: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-900",
-  },
+// One accent: blue marks what needs attention or is live, grey what's settled, dim what's off.
+const CALL_STATUS_STYLES: Record<CallStatus, { label: string; tone: Tone }> = {
+  upcoming: { label: "Upcoming", tone: "accent" },
+  past: { label: "Completed", tone: "neutral" },
+  pending: { label: "Awaiting confirmation", tone: "accent" },
+  cancelled: { label: "Cancelled", tone: "muted" },
+  rejected: { label: "Rejected", tone: "muted" },
 };
 
 export const STAGE_LABELS: Record<LeadStage, string> = {
@@ -35,66 +22,37 @@ export const STAGE_LABELS: Record<LeadStage, string> = {
   closed: "Closed",
 };
 
-const STAGE_STYLES: Record<LeadStage, string> = {
-  new: "bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-900",
-  contacted: "bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-900",
-  qualified: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900",
-  proposal: "bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:ring-indigo-900",
-  won: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-900",
-  lost: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-900",
-  closed: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
+const STAGE_TONES: Record<LeadStage, Tone> = {
+  new: "accent",
+  contacted: "accent",
+  qualified: "accent",
+  proposal: "accent",
+  won: "neutral",
+  lost: "muted",
+  closed: "muted",
 };
 
-const EMAIL_STATUS_STYLES: Record<EmailStatus, { label: string; className: string }> = {
-  draft: {
-    label: "Draft: needs sending",
-    className: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900",
-  },
-  scheduled: {
-    label: "Scheduled",
-    className: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:ring-blue-900",
-  },
-  sending: {
-    label: "Sending",
-    className: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:ring-blue-900",
-  },
-  sent: {
-    label: "Sent",
-    className: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-900",
-  },
-  skipped: {
-    label: "Skipped",
-    className: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
-  },
-  cancelled: {
-    label: "Cancelled",
-    className: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
-  },
-  failed: {
-    label: "Failed",
-    className: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-900",
-  },
+const EMAIL_STATUS_STYLES: Record<EmailStatus, { label: string; tone: Tone }> = {
+  draft: { label: "Draft: needs sending", tone: "accent" },
+  scheduled: { label: "Scheduled", tone: "accent" },
+  sending: { label: "Sending", tone: "accent" },
+  sent: { label: "Sent", tone: "neutral" },
+  skipped: { label: "Skipped", tone: "muted" },
+  cancelled: { label: "Cancelled", tone: "muted" },
+  failed: { label: "Failed", tone: "neutral" },
 };
 
 export function EmailStatusBadge({ status }: { status: EmailStatus | null }) {
-  if (!status) {
-    return (
-      <span className={`${BASE} bg-zinc-50 text-zinc-500 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-500 dark:ring-zinc-800`}>
-        Not scheduled
-      </span>
-    );
-  }
+  if (!status) return <Tag tone="muted">Not scheduled</Tag>;
   const s = EMAIL_STATUS_STYLES[status];
-  return <span className={`${BASE} ${s.className}`}>{s.label}</span>;
+  return <Tag tone={s.tone}>{s.label}</Tag>;
 }
-
-const BASE ="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset";
 
 export function CallStatusBadge({ status }: { status: CallStatus }) {
   const s = CALL_STATUS_STYLES[status];
-  return <span className={`${BASE} ${s.className}`}>{s.label}</span>;
+  return <Tag tone={s.tone}>{s.label}</Tag>;
 }
 
 export function StageBadge({ stage }: { stage: LeadStage }) {
-  return <span className={`${BASE} ${STAGE_STYLES[stage]}`}>{STAGE_LABELS[stage]}</span>;
+  return <Tag tone={STAGE_TONES[stage]}>{STAGE_LABELS[stage]}</Tag>;
 }

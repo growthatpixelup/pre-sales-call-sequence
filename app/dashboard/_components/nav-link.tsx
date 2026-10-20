@@ -25,15 +25,7 @@ function ActiveNavLink(props: Props) {
 
 function NavLinkView({ href, children, active }: Props & { active: boolean }) {
   return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={`flex items-center rounded-md px-3 py-1.5 font-medium ${
-        active
-          ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-          : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-      }`}
-    >
+    <Link href={href} aria-current={active ? "page" : undefined}>
       {children}
     </Link>
   );

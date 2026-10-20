@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { listLeadEmails, type LeadEmail } from "@/lib/emails/queue";
@@ -11,12 +10,13 @@ import { getLead } from "@/lib/leads/store";
 import type { Lead } from "@/lib/leads/types";
 import { saveEmailSettings, sendCaseStudy } from "../../../../actions";
 import { CaseStudyComposer } from "../../../../_components/case-study-composer";
+import { Callout, Page, PageSkeleton, RailIntro, Rows, Section } from "../../../../_components/ui";
 
 export const metadata: Metadata = { title: "Email preview · Dashboard" };
 
 export default function EmailPreviewPage({ params }: PageProps<"/dashboard/leads/[id]/emails/[step]">) {
   return (
-    <Suspense fallback={<div className="h-96 animate-pulse rounded-lg bg-zinc-200/70 dark:bg-zinc-800" />}>
+    <Suspense fallback={<PageSkeleton title="Email" label="Loading email" />}>
       <Preview params={params} />
     </Suspense>
   );
@@ -45,38 +45,25 @@ async function Preview({ params }: { params: Promise<{ id: string; step: string 
   const rendered = renderEmail(step as EmailStep, lead, ctx);
 
   return (
-    <div className="space-y-4">
-      <Link
-        href={`/dashboard/leads/${lead.id}`}
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-      >
-        ← {lead.name}
-      </Link>
-      <h1 className="text-2xl font-semibold tracking-tight">{STEP_LABELS[step as EmailStep]}</h1>
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <dl className="divide-y divide-zinc-100 text-sm dark:divide-zinc-800">
-          <div className="flex gap-3 px-4 py-2">
-            <dt className="w-16 text-zinc-500 dark:text-zinc-400">From</dt>
-            <dd>{process.env.EMAIL_FROM ?? "EMAIL_FROM not set"}</dd>
-          </div>
-          <div className="flex gap-3 px-4 py-2">
-            <dt className="w-16 text-zinc-500 dark:text-zinc-400">To</dt>
-            <dd>{process.env.EMAIL_TEST_TO ? `${process.env.EMAIL_TEST_TO} (test mode)` : lead.email}</dd>
-          </div>
-          <div className="flex gap-3 px-4 py-2">
-            <dt className="w-16 text-zinc-500 dark:text-zinc-400">Subject</dt>
-            <dd className="font-medium">{rendered.subject}</dd>
-          </div>
-        </dl>
+    <Page
+      rail={
+        <>
+          <RailIntro title={STEP_LABELS[step as EmailStep]} back={{ href: `/dashboard/leads/${lead.id}`, label: lead.name }} />
+          <Rows
+            rows={[
+              ["From", process.env.EMAIL_FROM ?? "EMAIL_FROM not set"],
+              ["To", process.env.EMAIL_TEST_TO ? `${process.env.EMAIL_TEST_TO} (test mode)` : lead.email],
+              ["Subject", <span key="subject" className="font-medium">{rendered.subject}</span>],
+            ]}
+          />
+        </>
+      }
+    >
+      <Section wide label="Preview">
         {/* Emails render on white like most mail apps. */}
-        <iframe
-          title="Email preview"
-          srcDoc={rendered.html}
-          sandbox=""
-          className="h-[560px] w-full border-t border-zinc-200 bg-white dark:border-zinc-800"
-        />
-      </div>
-    </div>
+        <iframe title="Email preview" srcDoc={rendered.html} sandbox="" className="block h-[720px] w-full border-0 bg-white" />
+      </Section>
+    </Page>
   );
 }
 
@@ -103,48 +90,45 @@ function ComposeCaseStudy({ lead, emails }: { lead: Lead; emails: LeadEmail[] })
   ];
 
   return (
-    <div className="space-y-4">
-      <Link
-        href={`/dashboard/leads/${lead.id}`}
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-      >
-        ← {lead.name}
-      </Link>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{STEP_LABELS.case_study}</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Pick the case study, write the company line and closing question, check the preview, then send. Call is {formatDateTime(lead.startTime)}.
-          {email?.status === "draft" && email.dueAt && <> Best sent around {formatDateTime(email.dueAt)}.</>}
-        </p>
-      </div>
-
-      {problems.length > 0 && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          Emails are paused until this is set up: {problems.join("; ")}. Sending will queue it until then.
-        </p>
+    <Page
+      rail={
+        <>
+          <RailIntro
+            title={STEP_LABELS.case_study}
+            back={{ href: `/dashboard/leads/${lead.id}`, label: lead.name }}
+            sub={
+              <>
+                Pick the case study, write the company line and closing question, check the preview, then send.
+              </>
+            }
+          />
+          <Rows
+            rows={[
+              ["Call", formatDateTime(lead.startTime)],
+              ...(email?.status === "draft" && email.dueAt ? [["Send by", formatDateTime(email.dueAt)] as [string, string]] : []),
+              ...facts,
+            ]}
+          />
+        </>
+      }
+    >
+      {(problems.length > 0 || (email?.status === "skipped" && email.note) || expect?.status === "sent") && (
+        <div className="grid gap-px pt-7">
+          {problems.length > 0 && (
+            <Callout title="Emails are paused.">
+              Until this is set up: {problems.join("; ")}. Sending will queue it until then.
+            </Callout>
+          )}
+          {email?.status === "skipped" && email.note && (
+            <Callout title="The sequence skipped this email">
+              ({email.note.toLowerCase()}). You can still send it.
+            </Callout>
+          )}
+          {expect?.status === "sent" && (
+            <Callout title="Email 3 already went out.">This would arrive after it.</Callout>
+          )}
+        </div>
       )}
-      {email?.status === "skipped" && email.note && (
-        <p className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-          The sequence skipped this email ({email.note.toLowerCase()}). You can still send it.
-        </p>
-      )}
-      {expect?.status === "sent" && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          Email 3 (what to expect) has already gone out, so this would arrive after it.
-        </p>
-      )}
-
-      <details className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900" open>
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Their booking answers</summary>
-        <dl className="grid gap-x-6 gap-y-3 border-t border-zinc-200 px-4 py-3 text-sm sm:grid-cols-2 dark:border-zinc-800">
-          {facts.map(([label, value]) => (
-            <div key={label}>
-              <dt className="text-xs text-zinc-500 dark:text-zinc-400">{label}</dt>
-              <dd className="whitespace-pre-wrap break-words">{value ?? "—"}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
 
       <CaseStudyComposer
         lead={lead}
@@ -153,6 +137,6 @@ function ComposeCaseStudy({ lead, emails }: { lead: Lead; emails: LeadEmail[] })
         sendAction={sendCaseStudy.bind(null, lead.id)}
         to={testTo ? `${testTo} (test mode)` : lead.email}
       />
-    </div>
+    </Page>
   );
 }

@@ -25,9 +25,7 @@ export function StageSelect({
         name="stage"
         defaultValue={stage}
         onChange={(e) => e.currentTarget.form?.requestSubmit()}
-        className={`rounded-md border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 ${
-          compact ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
-        }`}
+        className={compact ? "input input-sm" : "input"}
       >
         {LEAD_STAGES.map((s) => (
           <option key={s} value={s}>
@@ -36,7 +34,7 @@ export function StageSelect({
         ))}
       </select>
       <noscript>
-        <button type="submit" className="ml-2 text-sm underline">
+        <button type="submit" className="action mt-2">
           Save
         </button>
       </noscript>
