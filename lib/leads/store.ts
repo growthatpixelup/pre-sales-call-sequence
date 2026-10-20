@@ -1,7 +1,9 @@
 import "server-only";
 
+import { formatDateTime } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { bookingToLeadFields } from "./fields";
+import { isInternal } from "./internal";
 import type { BookingInput, BookingStatus, EmailSettings, Lead, LeadEvent, LeadStage } from "./types";
 
 /**
@@ -36,7 +38,10 @@ interface LeadRow {
   meeting_url: string | null;
   booking_status: BookingStatus;
   cancellation_reason: string | null;
+  booked_at: string;
   stage: LeadStage;
+  stage_changed_at: string | null;
+  deal_value: number | string | null;
   internal_notes: string;
   source: Lead["source"];
   created_at: string;
@@ -78,7 +83,12 @@ function fromRow(row: LeadRow, events: EventRow[] = []): Lead {
     meetingUrl: row.meeting_url,
     bookingStatus: row.booking_status,
     cancellationReason: row.cancellation_reason,
+    // Leads saved before migration 005 have no booked_at.
+    bookedAt: row.booked_at ?? row.created_at,
     stage: row.stage,
+    stageChangedAt: row.stage_changed_at,
+    // Postgres numerics can arrive as strings.
+    dealValue: row.deal_value == null ? null : Number(row.deal_value),
     internalNotes: row.internal_notes,
     emailSettings: row.email_settings ?? {},
     events: events.map((e): LeadEvent => ({ type: e.type, at: e.at, ...(e.detail ? { detail: e.detail } : {}) })),
@@ -127,18 +137,24 @@ async function addEvent(leadId: string, type: string, detail?: string | null) {
 }
 
 async function exists(id: string) {
-  const { data, error } = await supabase().from("leads").select("id").eq("id", id).maybeSingle();
-  if (error) fail("look up lead", error);
-  return Boolean(data);
+  return Boolean(await bookedAtOf(id));
 }
 
+/** The lead's booked_at, or null if there's no such lead. */
+async function bookedAtOf(id: string): Promise<string | null> {
+  const { data, error } = await supabase().from("leads").select("booked_at").eq("id", id).maybeSingle();
+  if (error) fail("look up lead", error);
+  return data ? (data.booked_at as string) : null;
+}
+
+/** All leads, latest call first. Our own and test bookings are left out (see ./internal). */
 export async function listLeads(): Promise<Lead[]> {
   const { data, error } = await supabase()
     .from("leads")
     .select("*")
     .order("start_time", { ascending: false });
   if (error) fail("list leads", error);
-  return (data as LeadRow[]).map((row) => fromRow(row));
+  return (data as LeadRow[]).map((row) => fromRow(row)).filter((lead) => !isInternal(lead));
 }
 
 export async function getLead(id: string): Promise<Lead | null> {
@@ -155,25 +171,34 @@ export async function getLead(id: string): Promise<Lead | null> {
 /**
  * Creates or updates a lead from a Cal.com booking. Dashboard-owned columns (stage, internal
  * notes, history) are never overwritten. Pass `previousId` for a reschedule so the old
- * booking's lead moves to the new booking uid.
+ * booking's lead moves to the new booking uid; `previousIds` tries several, newest first.
  */
 export async function upsertFromBooking(
   booking: BookingInput,
-  opts: { source: Lead["source"]; eventType: string; previousId?: string | null },
+  opts: { source: Lead["source"]; eventType: string; previousId?: string | null; previousIds?: string[] },
 ): Promise<void> {
   const db = supabase();
-  const columns = calColumns(booking);
+  const columns: Partial<LeadRow> = calColumns(booking);
 
-  let found = await exists(booking.id);
+  let bookedAt = await bookedAtOf(booking.id);
 
-  if (!found && opts.previousId && (await exists(opts.previousId))) {
-    // lead_events follow via "on update cascade".
-    const { error } = await db.from("leads").update({ id: booking.id }).eq("id", opts.previousId);
-    if (error) fail("move rescheduled lead", error);
-    found = true;
+  const previousIds = [...(opts.previousId ? [opts.previousId] : []), ...(opts.previousIds ?? [])];
+  for (const previousId of previousIds) {
+    if (bookedAt) break;
+    bookedAt = await bookedAtOf(previousId);
+    if (bookedAt) {
+      // lead_events and lead_emails follow via "on update cascade".
+      const { error } = await db.from("leads").update({ id: booking.id }).eq("id", previousId);
+      if (error) fail("move rescheduled lead", error);
+    }
   }
 
-  if (!found) {
+  // The first booking time wins: a reschedule is a new Cal.com booking with a later createdAt.
+  if (booking.bookedAt && (!bookedAt || Date.parse(booking.bookedAt) < Date.parse(bookedAt))) {
+    columns.booked_at = booking.bookedAt;
+  }
+
+  if (!bookedAt) {
     const { error } = await db.from("leads").insert({ id: booking.id, ...columns, source: opts.source });
     if (!error) {
       await addEvent(booking.id, opts.eventType);
@@ -187,6 +212,55 @@ export async function upsertFromBooking(
   if (error) fail("update lead", error);
   // Re-importing an existing booking isn't news; webhook updates are.
   if (opts.source !== "import") await addEvent(booking.id, opts.eventType);
+}
+
+const RESCHEDULED = "booking_rescheduled";
+
+/** Notes each earlier call a lead moved from (by its start time), once. */
+export async function recordReschedules(leadId: string, previousStarts: string[]): Promise<void> {
+  if (!previousStarts.length) return;
+  const db = supabase();
+  const { data, error } = await db.from("lead_events").select("detail").eq("lead_id", leadId).eq("type", RESCHEDULED);
+  if (error) fail("load lead events", error);
+  const known = new Set((data as { detail: string | null }[]).map((e) => e.detail));
+  for (const start of previousStarts) {
+    const detail = `Moved from a call on ${formatDateTime(start)}`;
+    if (!known.has(detail)) await addEvent(leadId, RESCHEDULED, detail);
+  }
+}
+
+/** How many times each lead's call was rescheduled. */
+export async function rescheduleCounts(): Promise<Map<string, number>> {
+  const { data, error } = await supabase().from("lead_events").select("lead_id").eq("type", RESCHEDULED);
+  if (error) fail("load reschedules", error);
+  const counts = new Map<string, number>();
+  for (const { lead_id } of data as { lead_id: string }[]) counts.set(lead_id, (counts.get(lead_id) ?? 0) + 1);
+  return counts;
+}
+
+export type LinkedInOutcome = "linkedin_sent" | "linkedin_skipped";
+
+/** Records that the LinkedIn connect note was sent (or skipped) for a lead. */
+export async function recordLinkedIn(leadId: string, outcome: LinkedInOutcome): Promise<void> {
+  await addEvent(leadId, outcome);
+}
+
+/** Leads whose LinkedIn note was sent or skipped, with which. */
+export async function linkedInOutcomes(): Promise<Map<string, LinkedInOutcome>> {
+  const { data, error } = await supabase()
+    .from("lead_events")
+    .select("lead_id, type")
+    .in("type", ["linkedin_sent", "linkedin_skipped"])
+    .order("at");
+  if (error) fail("load LinkedIn notes", error);
+  return new Map((data as { lead_id: string; type: LinkedInOutcome }[]).map((e) => [e.lead_id, e.type]));
+}
+
+/** Deletes leads (their events and emails go with them; replies are kept, unlinked). */
+export async function removeLeads(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const { error } = await supabase().from("leads").delete().in("id", ids);
+  if (error) fail("remove leads", error);
 }
 
 /** Returns false if no lead with this id exists. */
@@ -217,7 +291,7 @@ export async function updateEmailSettings(id: string, settings: EmailSettings): 
 
 export async function updateLeadTracking(
   id: string,
-  changes: { stage?: LeadStage; internalNotes?: string },
+  changes: { stage?: LeadStage; internalNotes?: string; dealValue?: number | null },
 ): Promise<void> {
   const db = supabase();
   const update: Partial<LeadRow> = {};
@@ -229,10 +303,12 @@ export async function updateLeadTracking(
     if (!data) return;
     if (data.stage !== changes.stage) {
       update.stage = changes.stage;
+      update.stage_changed_at = new Date().toISOString();
       previousStage = data.stage as LeadStage;
     }
   }
   if (changes.internalNotes !== undefined) update.internal_notes = changes.internalNotes;
+  if (changes.dealValue !== undefined) update.deal_value = changes.dealValue;
   if (!Object.keys(update).length) return;
 
   const { error } = await db.from("leads").update(update).eq("id", id);

@@ -27,6 +27,11 @@ export function callStatus(lead: Lead, now = Date.now()): CallStatus {
   return new Date(lead.endTime).getTime() > now ? "upcoming" : "past";
 }
 
+const EVENT_LABELS: Record<string, string> = {
+  linkedin_sent: "LinkedIn note sent",
+  linkedin_skipped: "LinkedIn note skipped",
+};
+
 export function humaniseEvent(type: string) {
-  return type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+  return EVENT_LABELS[type] ?? type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }

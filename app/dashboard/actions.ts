@@ -1,12 +1,14 @@
 "use server";
 
 import { refresh } from "next/cache";
+import { redirect } from "next/navigation";
 import { importBookingsFromCal } from "@/lib/cal/api";
 import { cancelPending, queueNow } from "@/lib/emails/queue";
+import { markRepliesRead } from "@/lib/emails/replies";
 import { EMAIL_STEPS, type EmailStep } from "@/lib/emails/schedule";
 import { processDueEmails, scheduleSequence } from "@/lib/emails/sender";
 import { defaultEmailSettings } from "@/lib/emails/templates";
-import { getLead, updateEmailSettings, updateLeadTracking } from "@/lib/leads/store";
+import { getLead, recordLinkedIn, updateEmailSettings, updateLeadTracking } from "@/lib/leads/store";
 import { LEAD_STAGES, type EmailSettings, type LeadStage } from "@/lib/leads/types";
 
 // The dashboard is protected by proxy.ts (DASHBOARD_PASSWORD); server actions are posted to
@@ -52,23 +54,68 @@ export async function cancelEmail(leadId: string, step: string) {
   refresh();
 }
 
-export async function saveEmailSettings(leadId: string, formData: FormData) {
-  const text = (key: string) => {
-    const v = formData.get(key);
-    return typeof v === "string" && v.trim() ? v.trim() : undefined;
-  };
-  const settings: EmailSettings = {
-    caseStudyId: text("caseStudyId"),
-    companyLine: text("companyLine"),
-    question: text("question"),
-    team: text("team"),
-  };
+const SETTING_KEYS = ["caseStudyId", "companyLine", "question", "team"] as const satisfies (keyof EmailSettings)[];
+
+/** Saves the settings fields present in the form, keeping the lead's other settings. */
+async function storeEmailSettings(leadId: string, formData: FormData) {
+  const lead = await getLead(leadId);
+  if (!lead) throw new Error("Lead not found");
+  const settings: EmailSettings = { ...lead.emailSettings };
   // Values equal to the defaults aren't stored, so later config changes still apply.
   const defaults = defaultEmailSettings();
-  for (const key of Object.keys(settings) as (keyof EmailSettings)[]) {
-    if (settings[key] === defaults[key]) delete settings[key];
+  for (const key of SETTING_KEYS) {
+    const v = formData.get(key);
+    if (typeof v !== "string") continue;
+    const value = v.trim();
+    if (value && value !== defaults[key]) settings[key] = value;
+    else delete settings[key];
   }
-  await updateEmailSettings(leadId, JSON.parse(JSON.stringify(settings)));
+  await updateEmailSettings(leadId, settings);
+}
+
+export async function saveEmailSettings(leadId: string, formData: FormData) {
+  await storeEmailSettings(leadId, formData);
+  refresh();
+}
+
+/** Saves Email 1's personalisation and sends it. */
+export async function sendCaseStudy(leadId: string, formData: FormData) {
+  await storeEmailSettings(leadId, formData);
+  await queueNow(leadId, "case_study", "Personalised and sent from dashboard");
+  await processDueEmails();
+  redirect(`/dashboard/leads/${encodeURIComponent(leadId)}`);
+}
+
+export async function saveDealValue(leadId: string, formData: FormData) {
+  const raw = String(formData.get("dealValue") ?? "").replace(/[$,\s]/g, "");
+  const value = raw ? Number(raw) : null;
+  if (value != null && (!Number.isFinite(value) || value < 0)) throw new Error("Invalid deal value");
+  await updateLeadTracking(leadId, { dealValue: value });
+  refresh();
+}
+
+export async function markReplyRead(id: string) {
+  await markRepliesRead({ id });
+  refresh();
+}
+
+export async function markLeadRepliesRead(leadId: string) {
+  await markRepliesRead({ leadId });
+  refresh();
+}
+
+export async function markAllRepliesRead() {
+  await markRepliesRead();
+  refresh();
+}
+
+export async function markLinkedInSent(leadId: string) {
+  await recordLinkedIn(leadId, "linkedin_sent");
+  refresh();
+}
+
+export async function skipLinkedIn(leadId: string) {
+  await recordLinkedIn(leadId, "linkedin_skipped");
   refresh();
 }
 

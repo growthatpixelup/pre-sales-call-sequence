@@ -1,168 +1,201 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
+import { estimatedValue, formatMoney } from "@/lib/analytics";
+import { listReplies } from "@/lib/emails/replies";
 import { callStatus, formatDateTime, humaniseEvent } from "@/lib/format";
 import { getLead } from "@/lib/leads/store";
-import { saveInternalNotes, updateStage } from "../../actions";
+import { markLeadRepliesRead, saveDealValue, saveInternalNotes, updateStage } from "../../actions";
 import { CallStatusBadge, StageBadge } from "../../_components/badges";
 import { EmailPersonalisation, LeadEmails, LinkedInNote } from "../../_components/lead-emails";
+import { ReplyList } from "../../_components/replies";
 import { StageSelect } from "../../_components/stage-select";
+import { Icon, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "../../_components/ui";
 
 export const metadata: Metadata = { title: "Lead · Dashboard" };
 
 export default function LeadPage({ params }: PageProps<"/dashboard/leads/[id]">) {
   return (
-    <div className="space-y-6">
-      <Link
-        href="/dashboard"
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-      >
-        ← All leads
-      </Link>
-      <Suspense fallback={<div className="h-96 animate-pulse rounded-lg bg-zinc-200/70 dark:bg-zinc-800" />}>
-        <LeadDetail params={params} />
-      </Suspense>
-    </div>
+    <Suspense fallback={<PageSkeleton title="Lead" label="Loading lead" />}>
+      <LeadDetail params={params} />
+    </Suspense>
   );
 }
 
 async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const lead = await getLead(decodeURIComponent(id));
+  const leadId = decodeURIComponent(id);
+  const [lead, replies] = await Promise.all([
+    getLead(leadId),
+    // Replies need migration 005; the page still works without it.
+    listReplies({ leadId }).catch(() => []),
+  ]);
   if (!lead) notFound();
 
   const status = callStatus(lead);
+  const estimate = estimatedValue(lead);
+  const unreadReplies = replies.filter((r) => !r.readAt).length;
 
   return (
-    <>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{lead.name}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <CallStatusBadge status={status} />
-            <StageBadge stage={lead.stage} />
-          </div>
-        </div>
-        <StageSelect stage={lead.stage} action={updateStage.bind(null, lead.id)} />
-      </div>
+    <Page
+      rail={
+        <>
+          <RailIntro title={lead.name} sub={lead.businessName ?? undefined} back={{ href: "/dashboard/leads", label: "All leads" }}>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <CallStatusBadge status={status} />
+              <StageBadge stage={lead.stage} />
+            </div>
+          </RailIntro>
+          <Rows
+            rows={[
+              ["Stage", <StageSelect key="stage" compact stage={lead.stage} action={updateStage.bind(null, lead.id)} />],
+              ["Starts", formatDateTime(lead.startTime)],
+              ["Ends", formatDateTime(lead.endTime)],
+              ["Their zone", lead.timeZone],
+              ["Event", lead.eventTitle],
+              ["Booked", formatDateTime(lead.bookedAt)],
+              ...(lead.cancellationReason ? [["Cancelled", lead.cancellationReason] as [string, string]] : []),
+              ["Booking", <span key="id" className="break-all font-mono text-[0.76rem] text-muted">{lead.id}</span>],
+            ]}
+          />
+          <RailActions>
+            {lead.meetingUrl && status === "upcoming" ? (
+              <a href={lead.meetingUrl} target="_blank" rel="noopener noreferrer" className="btn-primary">
+                Join call
+                <Icon name="external" />
+              </a>
+            ) : (
+              <a href={`mailto:${lead.email}`} className="btn-primary">
+                Email {lead.name.split(" ")[0]}
+                <Icon name="send" />
+              </a>
+            )}
+            {lead.meetingUrl && status === "upcoming" && (
+              <a href={`mailto:${lead.email}`} className="btn">
+                Email {lead.name.split(" ")[0]}
+                <Icon name="send" />
+              </a>
+            )}
+          </RailActions>
+        </>
+      }
+    >
+      <Section label="Form answers">
+        <Rows
+          flush
+          wide
+          rows={[
+            [
+              "Email",
+              <a key="email" href={`mailto:${lead.email}`} className="link">
+                {lead.email}
+              </a>,
+            ],
+            ["Business name", lead.businessName],
+            ["Business website", <MaybeLink key="site" href={lead.businessWebsite} />],
+            ["What problem are you looking to solve?", lead.problem],
+            ["Why did you book this call?", lead.bookingReason],
+            ["How much capital have you raised?", lead.capitalRaised],
+            ["Expected investment range", lead.investmentRange],
+            ["How did you find us?", lead.referralSource],
+            ...lead.extraFields.map((f) => [f.label, f.value] as [string, string]),
+          ]}
+        />
+      </Section>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <Card title="Form answers">
-            <dl className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              <Row label="Name">{lead.name}</Row>
-              <Row label="Email">
-                <a href={`mailto:${lead.email}`} className="text-blue-600 hover:underline dark:text-blue-400">
-                  {lead.email}
-                </a>
-              </Row>
-              <Row label="Business name">{lead.businessName}</Row>
-              <Row label="Business website">
-                <MaybeLink href={lead.businessWebsite} />
-              </Row>
-              <Row label="What problem are you looking to solve?">{lead.problem}</Row>
-              <Row label="Why did you book this call?">{lead.bookingReason}</Row>
-              <Row label="How much capital have you raised?">{lead.capitalRaised}</Row>
-              <Row label="Expected investment range">{lead.investmentRange}</Row>
-              <Row label="How did you find us?">{lead.referralSource}</Row>
-              {lead.extraFields.map((f) => (
-                <Row key={f.key} label={f.label}>
-                  {f.value}
-                </Row>
-              ))}
-            </dl>
-          </Card>
+      {Object.values(lead.legacy).some(Boolean) && (
+        <Section label="Old form answers">
+          <Rows
+            flush
+            wide
+            rows={[
+              ...(lead.legacy.phone ? [["Mobile number", lead.legacy.phone] as [string, string]] : []),
+              ...(lead.legacy.topic ? [["What is this meeting about", lead.legacy.topic] as [string, string]] : []),
+              ...(lead.legacy.notes ? [["Additional notes", lead.legacy.notes] as [string, string]] : []),
+              ...(lead.legacy.budget ? [["Budget", lead.legacy.budget] as [string, string]] : []),
+              ...(lead.legacy.twitter
+                ? [["X / Twitter", <MaybeLink key="x" href={lead.legacy.twitter} />] as [string, ReactNode]]
+                : []),
+            ]}
+          />
+        </Section>
+      )}
 
-          {Object.values(lead.legacy).some(Boolean) && (
-            <Card title="Old form answers">
-              <dl className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {lead.legacy.phone && <Row label="Mobile number">{lead.legacy.phone}</Row>}
-                {lead.legacy.topic && <Row label="What is this meeting about">{lead.legacy.topic}</Row>}
-                {lead.legacy.notes && <Row label="Additional notes">{lead.legacy.notes}</Row>}
-                {lead.legacy.budget && <Row label="Budget">{lead.legacy.budget}</Row>}
-                {lead.legacy.twitter && (
-                  <Row label="X / Twitter">
-                    <MaybeLink href={lead.legacy.twitter} />
-                  </Row>
-                )}
-              </dl>
-            </Card>
-          )}
+      {replies.length > 0 && (
+        <Section
+          label={`Replies${unreadReplies > 0 ? ` · ${unreadReplies} unread` : ""}`}
+          aside={
+            unreadReplies > 1 && (
+              <form action={markLeadRepliesRead.bind(null, lead.id)}>
+                <button type="submit" className="action">
+                  Mark all read
+                </button>
+              </form>
+            )
+          }
+        >
+          <ReplyList replies={replies} />
+        </Section>
+      )}
 
-          <LeadEmails lead={lead} />
+      <LeadEmails lead={lead} />
 
-          <Card title="Internal notes">
-            <form action={saveInternalNotes.bind(null, lead.id)} className="space-y-3 p-4">
-              <textarea
-                name="internalNotes"
-                defaultValue={lead.internalNotes}
-                rows={5}
-                placeholder="Notes only you can see: follow-ups, call outcome, next steps…"
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-              />
-              <button
-                type="submit"
-                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-              >
-                Save notes
-              </button>
-            </form>
-          </Card>
-        </div>
+      <Section label="Deal">
+        <form action={saveDealValue.bind(null, lead.id)} className="grid max-w-[68ch] gap-5">
+          <label className="field">
+            <span className="mono-label">Deal value (USD)</span>
+            <input
+              name="dealValue"
+              inputMode="decimal"
+              defaultValue={lead.dealValue ?? ""}
+              placeholder={estimate != null ? String(estimate) : "e.g. 12000"}
+              className="input tabular-nums"
+            />
+            <span className="hint">
+              {estimate != null
+                ? `Leave empty to use ${formatMoney(estimate)}, the middle of their investment range.`
+                : "Their investment range doesn't give a number, so this lead counts as $0 until you set one."}
+            </span>
+          </label>
+          <button type="submit" className="btn">
+            Save value
+          </button>
+        </form>
+      </Section>
 
-        <div className="space-y-6">
-          <Card title="Call">
-            <dl className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              <Row label="Starts">{formatDateTime(lead.startTime)}</Row>
-              <Row label="Ends">{formatDateTime(lead.endTime)}</Row>
-              <Row label="Their time zone">{lead.timeZone}</Row>
-              <Row label="Event">{lead.eventTitle}</Row>
-              <Row label="Meeting link">
-                {lead.meetingUrl ? (
-                  <a
-                    href={lead.meetingUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="break-all text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Join call
-                  </a>
-                ) : null}
-              </Row>
-              {lead.cancellationReason && <Row label="Cancellation reason">{lead.cancellationReason}</Row>}
-              <Row label="Booking ID">
-                <span className="break-all font-mono text-xs">{lead.id}</span>
-              </Row>
-            </dl>
-          </Card>
+      <Section label="Internal notes">
+        <form action={saveInternalNotes.bind(null, lead.id)} className="grid max-w-[68ch] gap-5">
+          <textarea
+            name="internalNotes"
+            defaultValue={lead.internalNotes}
+            rows={5}
+            aria-label="Internal notes"
+            placeholder="Notes only you can see: follow-ups, call outcome, next steps…"
+            className="input"
+          />
+          <button type="submit" className="btn">
+            Save notes
+          </button>
+        </form>
+      </Section>
 
-          <EmailPersonalisation lead={lead} />
-          <LinkedInNote lead={lead} />
+      <EmailPersonalisation lead={lead} />
+      <LinkedInNote lead={lead} />
 
-          <Card title="History">
-            <ol className="space-y-3 p-4">
-              {[...lead.events].reverse().map((e, i) => (
-                <li key={`${e.at}-${i}`} className="text-sm">
-                  <div className="font-medium">{humaniseEvent(e.type)}</div>
-                  {e.detail && <div className="text-zinc-600 dark:text-zinc-400">{e.detail}</div>}
-                  <div className="text-xs text-zinc-500 dark:text-zinc-500">{formatDateTime(e.at)}</div>
-                </li>
-              ))}
-            </ol>
-          </Card>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function Card({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold dark:border-zinc-800">{title}</h2>
-      {children}
-    </section>
+      <Section label="History">
+        <ol className="steps max-w-[68ch]">
+          {[...lead.events].reverse().map((e, i) => (
+            <li key={`${e.at}-${i}`}>
+              <div>
+                <div className="font-medium">{humaniseEvent(e.type)}</div>
+                {e.detail && <div className="text-[0.92rem] text-body">{e.detail}</div>}
+                <div className="mono-label mt-1">{formatDateTime(e.at)}</div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </Section>
+    </Page>
   );
 }
 
@@ -170,24 +203,8 @@ function MaybeLink({ href }: { href: string | null }) {
   if (!href) return null;
   if (!/^https?:\/\//.test(href)) return <>{href}</>;
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="break-all text-blue-600 hover:underline dark:text-blue-400"
-    >
+    <a href={href} target="_blank" rel="noopener noreferrer" className="link break-all">
       {href}
     </a>
-  );
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid gap-1 px-4 py-3 sm:grid-cols-3 sm:gap-4">
-      <dt className="text-sm text-zinc-500 dark:text-zinc-400">{label}</dt>
-      <dd className="whitespace-pre-wrap break-words text-sm sm:col-span-2">
-        {children ?? <span className="text-zinc-400 dark:text-zinc-600">—</span>}
-      </dd>
-    </div>
   );
 }

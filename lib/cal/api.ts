@@ -1,6 +1,6 @@
 import "server-only";
 
-import { upsertFromBooking } from "@/lib/leads/store";
+import { recordReschedules, removeLeads, upsertFromBooking } from "@/lib/leads/store";
 import type { BookingInput, BookingStatus } from "@/lib/leads/types";
 
 const CAL_API_BASE = "https://api.cal.com/v2";
@@ -22,6 +22,10 @@ interface ApiBooking {
   end: string;
   location?: string;
   cancellationReason?: string;
+  createdAt?: string;
+  /** Set on a booking that replaced an earlier one, and on the one it replaced. */
+  rescheduledFromUid?: string;
+  rescheduledToUid?: string;
   eventTypeId?: number;
   eventType?: { id?: number; slug?: string };
   attendees?: ApiAttendee[];
@@ -61,6 +65,7 @@ function bookingFromApi(b: ApiBooking): BookingInput {
     meetingUrl: b.location && /^https?:\/\//.test(b.location) ? b.location : null,
     bookingStatus: toStatus(b.status),
     cancellationReason: b.cancellationReason ?? null,
+    bookedAt: b.createdAt ?? null,
     attendeeName: attendee?.name ?? null,
     attendeeEmail: attendee?.email ?? null,
     attendeePhone: attendee?.phoneNumber ?? null,
@@ -72,14 +77,18 @@ function bookingFromApi(b: ApiBooking): BookingInput {
   };
 }
 
-/** Pulls existing bookings from the Cal.com API into the lead store. Returns how many were saved. */
+/**
+ * Pulls existing bookings from the Cal.com API into the lead store. Returns how many were saved.
+ * Cal.com treats a reschedule as cancel-and-rebook, so each chain of reschedules is saved once,
+ * as its latest booking, booked at the time of the first.
+ */
 export async function importBookingsFromCal(): Promise<number> {
   const apiKey = process.env.CAL_API_KEY;
   if (!apiKey) throw new Error("CAL_API_KEY is not set.");
   const eventTypeId = process.env.CAL_EVENT_TYPE_ID;
 
+  const bookings: ApiBooking[] = [];
   let cursor: string | null | undefined;
-  let count = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const url = new URL(`${CAL_API_BASE}/bookings`);
@@ -95,15 +104,51 @@ export async function importBookingsFromCal(): Promise<number> {
     if (!res.ok || !body || body.status !== "success") {
       throw new Error(body?.error?.message ?? `Cal.com API returned ${res.status}`);
     }
-
-    for (const booking of body.data) {
-      await upsertFromBooking(bookingFromApi(booking), { source: "import", eventType: "imported" });
-      count++;
-    }
+    bookings.push(...body.data);
 
     cursor = body.pagination?.nextCursor;
     if (!body.pagination?.hasMore || !cursor) break;
   }
 
+  const byUid = new Map(bookings.map((b) => [b.uid, b]));
+  let count = 0;
+  for (const booking of bookings) {
+    // Replaced by a later booking we also have: that one carries the lead.
+    if (booking.rescheduledToUid && byUid.has(booking.rescheduledToUid)) continue;
+
+    const earlier = rescheduledFrom(booking, byUid);
+    const input = bookingFromApi(booking);
+    const first = earlier[earlier.length - 1];
+    if (first?.createdAt) input.bookedAt = first.createdAt;
+
+    await upsertFromBooking(input, {
+      source: "import",
+      eventType: "imported",
+      previousIds: earlier.map((b) => b.uid),
+    });
+    // Leads saved for the replaced bookings by earlier imports are duplicates of this one.
+    await removeLeads(earlier.map((b) => b.uid));
+    await recordReschedules(
+      booking.uid,
+      earlier.map((b) => b.start),
+    );
+    count++;
+  }
+
   return count;
+}
+
+/** The bookings this one replaced, newest first. */
+function rescheduledFrom(booking: ApiBooking, byUid: Map<string, ApiBooking>): ApiBooking[] {
+  const chain: ApiBooking[] = [];
+  const seen = new Set([booking.uid]);
+  let uid = booking.rescheduledFromUid;
+  while (uid && !seen.has(uid)) {
+    seen.add(uid);
+    const previous = byUid.get(uid);
+    if (!previous) break;
+    chain.push(previous);
+    uid = previous.rescheduledFromUid;
+  }
+  return chain;
 }

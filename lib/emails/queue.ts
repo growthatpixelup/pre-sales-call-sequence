@@ -6,7 +6,7 @@ import type { EmailStep, PlannedEmail } from "./schedule";
 
 /** Email queue in the `lead_emails` table (see supabase/migrations/003_email_sequence.sql). */
 
-export type EmailStatus = "scheduled" | "sending" | "sent" | "skipped" | "cancelled" | "failed";
+export type EmailStatus = "draft" | "scheduled" | "sending" | "sent" | "skipped" | "cancelled" | "failed";
 
 export interface LeadEmail {
   id: string;
@@ -81,7 +81,7 @@ export async function applyPlan(lead: Lead, plan: PlannedEmail[], resend: EmailS
     .map((p) => ({
       lead_id: lead.id,
       step: p.step,
-      status: p.dueAt ? "scheduled" : "skipped",
+      status: p.draft ? "draft" : p.dueAt ? "scheduled" : "skipped",
       due_at: p.dueAt?.toISOString() ?? null,
       note: p.skipReason ?? null,
       attempts: 0,
@@ -105,16 +105,78 @@ export async function queueNow(leadId: string, step: EmailStep, note: string | n
   return true;
 }
 
-/** Cancels emails that haven't gone out yet. */
+/** Cancels emails that haven't gone out yet, drafts included. */
 export async function cancelPending(leadId: string, reason: string, steps?: EmailStep[]) {
   let query = supabase()
     .from("lead_emails")
     .update({ status: "cancelled", note: reason })
     .eq("lead_id", leadId)
-    .eq("status", "scheduled");
+    .in("status", ["scheduled", "draft"]);
   if (steps) query = query.in("step", steps);
   const { error } = await query;
   if (error) fail("cancel emails", error);
+}
+
+/** Drafts (Email 1) waiting to be personalised and sent, for calls that haven't started. */
+export async function listOpenDrafts(): Promise<LeadEmail[]> {
+  const { data, error } = await supabase()
+    .from("lead_emails")
+    .select("*, leads!inner(start_time, booking_status)")
+    .eq("status", "draft")
+    .eq("leads.booking_status", "accepted")
+    .gt("leads.start_time", new Date().toISOString())
+    .order("due_at");
+  if (error) fail("load drafts", error);
+  return (data as Row[]).map(fromRow);
+}
+
+/**
+ * Everything still waiting (drafts, scheduled, sending, failed), plus emails that were sent,
+ * skipped or cancelled since `since`. For the email health page.
+ */
+export async function listEmailActivity(since: Date): Promise<LeadEmail[]> {
+  const db = supabase();
+  const [open, recent] = await Promise.all([
+    db.from("lead_emails").select("*").in("status", ["draft", "scheduled", "sending", "failed"]).order("due_at").limit(1000),
+    db
+      .from("lead_emails")
+      .select("*")
+      .in("status", ["sent", "skipped", "cancelled"])
+      .gte("updated_at", since.toISOString())
+      .order("updated_at", { ascending: false })
+      .limit(1000),
+  ]);
+  if (open.error) fail("load queued emails", open.error);
+  if (recent.error) fail("load recent emails", recent.error);
+  return [...(open.data as Row[]), ...(recent.data as Row[])].map(fromRow);
+}
+
+/** Of these leads, the ones with no emails planned at all. */
+export async function leadsWithoutEmails(leadIds: string[]): Promise<Set<string>> {
+  if (!leadIds.length) return new Set();
+  const { data, error } = await supabase().from("lead_emails").select("lead_id").in("lead_id", leadIds);
+  if (error) fail("load lead emails", error);
+  const planned = new Set((data as { lead_id: string }[]).map((r) => r.lead_id));
+  return new Set(leadIds.filter((id) => !planned.has(id)));
+}
+
+/** Drafts nobody sent before the call started are marked skipped. */
+export async function expireDrafts() {
+  const db = supabase();
+  const { data, error } = await db
+    .from("lead_emails")
+    .select("id, leads!inner(start_time)")
+    .eq("status", "draft")
+    .lte("leads.start_time", new Date().toISOString());
+  if (error) fail("load expired drafts", error);
+  const ids = (data as { id: string }[]).map((r) => r.id);
+  if (!ids.length) return;
+  const { error: updateError } = await db
+    .from("lead_emails")
+    .update({ status: "skipped", note: "Call started before it was sent" })
+    .in("id", ids)
+    .eq("status", "draft");
+  if (updateError) fail("expire drafts", updateError);
 }
 
 /**

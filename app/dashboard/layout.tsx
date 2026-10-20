@@ -1,16 +1,61 @@
 import Link from "next/link";
+import { Suspense } from "react";
+import { unreadReplyCount } from "@/lib/emails/replies";
+import { loadTasks } from "@/lib/tasks";
+import { NavLink } from "./_components/nav-link";
 
 export default function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
   return (
-    <div className="flex min-h-full flex-1 flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex h-14 max-w-screen-2xl items-center px-4 sm:px-6">
-          <Link href="/dashboard" className="text-sm font-semibold tracking-tight">
-            Call Leads
-          </Link>
-        </div>
+    <div className="flex min-h-full flex-1 flex-col">
+      <header className="site-header">
+        <Link href="/dashboard" className="flex items-baseline gap-3 text-text no-underline">
+          <span className="font-display text-lg font-medium tracking-[-0.02em]">Pixelup Labs</span>
+          <span className="mono-label">Call leads</span>
+        </Link>
+        <nav className="site-nav" aria-label="Dashboard">
+          <NavLink href="/dashboard" exact>
+            Overview
+          </NavLink>
+          <NavLink href="/dashboard/leads">Leads</NavLink>
+          <NavLink href="/dashboard/tasks">
+            Tasks
+            <Suspense fallback={null}>
+              <TaskCount />
+            </Suspense>
+          </NavLink>
+          <NavLink href="/dashboard/emails">Emails</NavLink>
+          <NavLink href="/dashboard/replies">
+            Replies
+            <Suspense fallback={null}>
+              <UnreadCount />
+            </Suspense>
+          </NavLink>
+        </nav>
       </header>
-      <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-8 sm:px-6">{children}</main>
+      <main className="flex flex-1 flex-col">{children}</main>
     </div>
+  );
+}
+
+async function UnreadCount() {
+  // The header shouldn't break the page if replies aren't set up yet (migration not run).
+  const count = await unreadReplyCount().catch(() => 0);
+  return <Badge count={count} label="unread" />;
+}
+
+async function TaskCount() {
+  const count = await loadTasks(new Date())
+    .then(({ tasks }) => tasks.length)
+    .catch(() => 0);
+  return <Badge count={count} label="to do" />;
+}
+
+function Badge({ count, label }: { count: number; label: string }) {
+  if (!count) return null;
+  return (
+    <span className="bg-blue px-1.5 py-px font-mono text-[0.72rem] tabular-nums text-text">
+      <span className="sr-only">, {label}: </span>
+      {count}
+    </span>
   );
 }
