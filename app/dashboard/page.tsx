@@ -10,7 +10,6 @@ import {
   pipelineSnapshot,
   resolveRange,
   type AttributionRow,
-  type Breakdown,
   type PeriodStats,
 } from "@/lib/analytics";
 import { listOpenDrafts } from "@/lib/emails/queue";
@@ -21,6 +20,7 @@ import type { Lead } from "@/lib/leads/types";
 import { STAGE_LABELS } from "./_components/badges";
 import { BookingsChart } from "./_components/bookings-chart";
 import { RangeFilter } from "./_components/range-filter";
+import { SourceDonut } from "./_components/source-donut";
 import { ReplyList } from "./_components/replies";
 import { Empty, Icon, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "./_components/ui";
 
@@ -172,8 +172,6 @@ async function Overview({ searchParams }: { searchParams: SearchParams }) {
         <BookingsChart buckets={stats.series.buckets} unit={stats.series.unit} />
       </Section>
 
-      <BreakdownSection breakdown={stats.breakdown} />
-
       <Section label="How they found us" aside={<p className="hint m-0">Calls booked in this period, by their answer to “How did you find us?”</p>}>
         <AttributionTable rows={stats.attribution} />
       </Section>
@@ -262,139 +260,63 @@ function bookedNote({ cancelled, rescheduled }: PeriodStats) {
   return parts.length ? parts.join(" · ") : undefined;
 }
 
-/** The people behind the period's numbers, so a count is never a mystery. */
-function BreakdownSection({ breakdown }: { breakdown: Breakdown }) {
-  const { live, cancelled, rescheduled, unpriced } = breakdown;
-  if (!live.length && !cancelled.length && !rescheduled.length) return null;
-  return (
-    <Section label="Who booked">
-      <div className="grid gap-px">
-        <Group title="Going ahead" count={live.length} open={live.length <= 8}>
-          {live.map((l) => (
-            <LeadLine key={l.id} lead={l} note={`Call ${formatDateTime(l.startTime)}`} />
-          ))}
-        </Group>
-        <Group title="Cancelled" count={cancelled.length} open>
-          {cancelled.map((l) => (
-            <LeadLine
-              key={l.id}
-              lead={l}
-              note={`Was ${formatDateTime(l.startTime)}${l.cancellationReason ? ` · “${l.cancellationReason}”` : " · no reason given"}`}
-            />
-          ))}
-        </Group>
-        <Group title="Rescheduled" hint="Each counted once, at their latest time" count={rescheduled.length} open>
-          {rescheduled.map(({ lead, times }) => (
-            <LeadLine
-              key={lead.id}
-              lead={lead}
-              note={`Moved ${times === 1 ? "once" : `${times} times`} · now ${formatDateTime(lead.startTime)}${
-                lead.bookingStatus === "cancelled" || lead.bookingStatus === "rejected" ? " (then cancelled)" : ""
-              }`}
-            />
-          ))}
-        </Group>
-        <Group title="No budget on file" hint="No deal value and no investment range answer" count={unpriced.length}>
-          {unpriced.map((l) => (
-            <LeadLine key={l.id} lead={l} note={`Call ${formatDateTime(l.startTime)}`} />
-          ))}
-        </Group>
-      </div>
-    </Section>
-  );
-}
-
-function Group({
-  title,
-  hint,
-  count,
-  open = false,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  count: number;
-  open?: boolean;
-  children: ReactNode;
-}) {
-  if (!count) return null;
-  return (
-    <details className="group bg-panel" open={open}>
-      <summary className="flex cursor-pointer list-none items-baseline gap-3 px-5 py-4 hover:bg-panel-2">
-        <span className="font-display text-xl font-medium tabular-nums">{count}</span>
-        <span className="font-medium uppercase text-[0.85rem]">{title}</span>
-        {hint && <span className="hint hidden sm:inline">{hint}</span>}
-        <span className="ml-auto font-mono text-muted group-open:rotate-90" aria-hidden>
-          ›
-        </span>
-      </summary>
-      <ul className="list mx-5 mb-4">{children}</ul>
-    </details>
-  );
-}
-
-function LeadLine({ lead, note }: { lead: Lead; note: string }) {
-  return (
-    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5">
-      <Link href={`/dashboard/leads/${lead.id}`} className="link">
-        {lead.name}
-      </Link>
-      <span className="text-[0.85rem] text-muted">{note}</span>
-    </li>
-  );
-}
-
 function AttributionTable({ rows }: { rows: AttributionRow[] }) {
   const total = rows.reduce((n, r) => n + r.booked, 0);
   if (!total) return <Empty>No calls booked in this period.</Empty>;
   const max = Math.max(...rows.map((r) => r.booked));
   return (
-    <div className="overflow-x-auto">
-      <table className="table min-w-[560px]">
-        <thead>
-          <tr>
-            <th>Channel</th>
-            <th className="w-[30%]">
-              <span className="sr-only">Share</span>
-            </th>
-            <th className="text-right">Booked</th>
-            <th className="text-right">Going ahead</th>
-            <th className="text-right">Won</th>
-            <th className="text-right">Value</th>
-          </tr>
-        </thead>
-        {rows
-          .filter((r) => r.booked > 0)
-          .map((r) => (
-            <tbody key={r.pillar}>
+    <>
+      <SourceDonut rows={rows} />
+      <details className="mt-6">
+        <summary className="mono-label cursor-pointer hover:text-text">Details</summary>
+        <div className="mt-3 overflow-x-auto">
+          <table className="table min-w-[560px]">
+            <thead>
               <tr>
-                <td className="whitespace-nowrap font-medium text-text">{r.pillar}</td>
-                <td className="align-middle">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 bg-blue" style={{ width: `${(r.booked / max) * 100}%` }} aria-hidden />
-                    <span className="font-mono text-[0.72rem] text-muted">{Math.round((r.booked / total) * 100)}%</span>
-                  </div>
-                </td>
-                <td className="text-right tabular-nums text-text">{r.booked}</td>
-                <td className="text-right tabular-nums">{r.live}</td>
-                <td className="text-right tabular-nums">{r.won || "—"}</td>
-                <td className="whitespace-nowrap text-right tabular-nums">{r.value ? formatMoneyCompact(r.value) : "—"}</td>
+                <th>Channel</th>
+                <th className="w-[30%]">
+                  <span className="sr-only">Share</span>
+                </th>
+                <th className="text-right">Booked</th>
+                <th className="text-right">Going ahead</th>
+                <th className="text-right">Won</th>
+                <th className="text-right">Value</th>
               </tr>
-              {r.sources.length > 1 &&
-                r.sources.map((src) => (
-                  <tr key={src.source} className="text-[0.85rem]">
-                    <td className="whitespace-nowrap pl-4 text-muted">{src.source}</td>
-                    <td />
-                    <td className="text-right tabular-nums text-muted">{src.booked}</td>
-                    <td className="text-right tabular-nums text-muted">{src.live}</td>
-                    <td />
-                    <td />
+            </thead>
+            {rows
+              .filter((r) => r.booked > 0)
+              .map((r) => (
+                <tbody key={r.pillar}>
+                  <tr>
+                    <td className="whitespace-nowrap font-medium text-text">{r.pillar}</td>
+                    <td className="align-middle">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 bg-blue" style={{ width: `${(r.booked / max) * 100}%` }} aria-hidden />
+                        <span className="font-mono text-[0.72rem] text-muted">{Math.round((r.booked / total) * 100)}%</span>
+                      </div>
+                    </td>
+                    <td className="text-right tabular-nums text-text">{r.booked}</td>
+                    <td className="text-right tabular-nums">{r.live}</td>
+                    <td className="text-right tabular-nums">{r.won || "—"}</td>
+                    <td className="whitespace-nowrap text-right tabular-nums">{r.value ? formatMoneyCompact(r.value) : "—"}</td>
                   </tr>
-                ))}
-            </tbody>
-          ))}
-      </table>
-    </div>
+                  {r.sources.length > 1 &&
+                    r.sources.map((src) => (
+                      <tr key={src.source} className="text-[0.85rem]">
+                        <td className="whitespace-nowrap pl-4 text-muted">{src.source}</td>
+                        <td />
+                        <td className="text-right tabular-nums text-muted">{src.booked}</td>
+                        <td className="text-right tabular-nums text-muted">{src.live}</td>
+                        <td />
+                        <td />
+                      </tr>
+                    ))}
+                </tbody>
+              ))}
+          </table>
+        </div>
+      </details>
+    </>
   );
 }
 

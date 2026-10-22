@@ -34,6 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 .env.local
+env.local
 
 # local lead storage (contains personal data)
 /data/
