@@ -78,6 +78,18 @@ function matches(field: RawField, target: MappedField) {
   return rule.label.test(field.label?.trim() || humanise(field.key));
 }
 
+/** The booking form as the lead filled it in: Cal.com's question and their answer, in form order. */
+export function formAnswers(booking: BookingInput): { question: string; answer: string }[] {
+  return booking.fields.flatMap((field) => {
+    const answer = IGNORED_KEYS.has(field.key) ? null : valueToString(field.value);
+    if (!answer) return [];
+    // Cal.com's built-in questions can arrive labelled with a key such as "email_address".
+    const label = field.label?.trim();
+    const question = label && !/^[a-z0-9_]+$/.test(label) ? label : humanise(label || field.key);
+    return [{ question, answer }];
+  });
+}
+
 /** Adds https:// to bare domains so they can be linked. */
 export function normaliseUrl(value: string | null): string | null {
   if (!value) return null;

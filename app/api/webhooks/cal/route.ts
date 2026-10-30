@@ -2,11 +2,12 @@ import { bookingFromWebhook, previousBookingUid, verifyCalSignature } from "@/li
 import { cancelSequence, processDueEmails, queueNoShowNudge, scheduleSequence } from "@/lib/emails/sender";
 import { cancelPending } from "@/lib/emails/queue";
 import { addLeadEvent, getLead, setBookingStatus, upsertFromBooking } from "@/lib/leads/store";
+import { notifyCallBooked } from "@/lib/slack";
 
 type Json = Record<string, unknown>;
 
-/** Email problems are logged, not returned: the lead is already saved and Cal.com shouldn't retry. */
-async function emailStep(label: string, fn: () => Promise<unknown>) {
+/** Email and Slack problems are logged, not returned: the lead is already saved and Cal.com shouldn't retry. */
+async function step(label: string, fn: () => Promise<unknown>) {
   try {
     await fn();
   } catch (err) {
@@ -50,12 +51,16 @@ export async function POST(request: Request) {
         trigger === "BOOKING_REQUESTED" ? "pending" : "accepted",
       );
       if (!booking) return Response.json({ error: "Missing booking uid" }, { status: 400 });
-      await upsertFromBooking(booking, {
+      const created = await upsertFromBooking(booking, {
         source: "webhook",
         eventType: trigger.toLowerCase(),
         previousId: trigger === "BOOKING_RESCHEDULED" ? previousBookingUid(payload) : null,
       });
-      await emailStep("scheduling emails", async () => {
+      // Only new calls: a repeat delivery of the same booking, or a reschedule, isn't one.
+      if (created && trigger !== "BOOKING_RESCHEDULED") {
+        await step("posting to Slack", () => notifyCallBooked(booking));
+      }
+      await step("scheduling emails", async () => {
         const lead = await getLead(booking.id);
         if (!lead) return;
         const rescheduled = trigger === "BOOKING_RESCHEDULED";
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
       });
       // Send anything already due (the confirmation, when the call is less than an hour away)
       // rather than waiting for the next cron run.
-      await emailStep("sending due emails", () => processDueEmails());
+      await step("sending due emails", () => processDueEmails());
       break;
     }
 
@@ -82,7 +87,7 @@ export async function POST(request: Request) {
           { source: "webhook", eventType: trigger.toLowerCase() },
         );
       }
-      await emailStep("cancelling emails", () => cancelSequence(booking.id, `Booking was ${status}`));
+      await step("cancelling emails", () => cancelSequence(booking.id, `Booking was ${status}`));
       break;
     }
 
@@ -92,7 +97,7 @@ export async function POST(request: Request) {
       const uid = payload.bookingUid as string | undefined;
       if (uid && (await getLead(uid))) {
         await addLeadEvent(uid, "guest_did_not_join");
-        await emailStep("queueing no-show email", () => queueNoShowNudge(uid, "Guest hadn't joined Cal Video"));
+        await step("queueing no-show email", () => queueNoShowNudge(uid, "Guest hadn't joined Cal Video"));
       }
       break;
     }
@@ -104,7 +109,7 @@ export async function POST(request: Request) {
       if (uid && (await getLead(uid))) {
         await addLeadEvent(uid, "booking_no_show_updated", payload.message as string | undefined);
         if (attendees.some((a) => a.noShow)) {
-          await emailStep("queueing no-show email", () => queueNoShowNudge(uid, "Marked as no-show in Cal.com"));
+          await step("queueing no-show email", () => queueNoShowNudge(uid, "Marked as no-show in Cal.com"));
         }
       }
       break;
