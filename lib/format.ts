@@ -11,6 +11,20 @@ export function formatDateTime(iso: string) {
   }).format(new Date(iso));
 }
 
+/** Date and time with the weekday and time zone, for messages read outside the dashboard. */
+export function formatCallTime(iso: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+    timeZone: TIME_ZONE,
+  }).format(new Date(iso));
+}
+
 export function formatDate(iso: string) {
   return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeZone: TIME_ZONE }).format(
     new Date(iso),
