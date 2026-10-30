@@ -7,7 +7,7 @@ import { listLeads } from "@/lib/leads/store";
 import { LEAD_STAGES, type Lead } from "@/lib/leads/types";
 import { updateStage } from "../actions";
 import { CallStatusBadge, STAGE_LABELS } from "../_components/badges";
-import { ImportButton } from "../_components/import-button";
+import { SyncButton } from "../_components/sync-button";
 import { StageSelect } from "../_components/stage-select";
 import { None, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "../_components/ui";
 
@@ -62,7 +62,7 @@ async function LeadsView({ searchParams }: { searchParams: SearchParams }) {
           <Rows rows={stats.map((st) => [st.label, <span key={st.label} className="tabular-nums">{st.value}</span>])} />
           {process.env.CAL_API_KEY ? (
             <RailActions>
-              <ImportButton />
+              <SyncButton primary />
             </RailActions>
           ) : null}
         </>

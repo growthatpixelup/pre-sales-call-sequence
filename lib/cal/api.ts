@@ -78,11 +78,12 @@ function bookingFromApi(b: ApiBooking): BookingInput {
 }
 
 /**
- * Pulls existing bookings from the Cal.com API into the lead store. Returns how many were saved.
+ * Pulls bookings from the Cal.com API into the lead store, catching any the webhook missed.
+ * Returns how many were saved and the ids of leads that are new.
  * Cal.com treats a reschedule as cancel-and-rebook, so each chain of reschedules is saved once,
  * as its latest booking, booked at the time of the first.
  */
-export async function importBookingsFromCal(): Promise<number> {
+export async function syncBookingsFromCal(): Promise<{ saved: number; added: string[] }> {
   const apiKey = process.env.CAL_API_KEY;
   if (!apiKey) throw new Error("CAL_API_KEY is not set.");
   const eventTypeId = process.env.CAL_EVENT_TYPE_ID;
@@ -111,7 +112,8 @@ export async function importBookingsFromCal(): Promise<number> {
   }
 
   const byUid = new Map(bookings.map((b) => [b.uid, b]));
-  let count = 0;
+  let saved = 0;
+  const added: string[] = [];
   for (const booking of bookings) {
     // Replaced by a later booking we also have: that one carries the lead.
     if (booking.rescheduledToUid && byUid.has(booking.rescheduledToUid)) continue;
@@ -121,21 +123,22 @@ export async function importBookingsFromCal(): Promise<number> {
     const first = earlier[earlier.length - 1];
     if (first?.createdAt) input.bookedAt = first.createdAt;
 
-    await upsertFromBooking(input, {
+    const created = await upsertFromBooking(input, {
       source: "import",
       eventType: "imported",
       previousIds: earlier.map((b) => b.uid),
     });
+    if (created) added.push(booking.uid);
     // Leads saved for the replaced bookings by earlier imports are duplicates of this one.
     await removeLeads(earlier.map((b) => b.uid));
     await recordReschedules(
       booking.uid,
       earlier.map((b) => b.start),
     );
-    count++;
+    saved++;
   }
 
-  return count;
+  return { saved, added };
 }
 
 /** The bookings this one replaced, newest first. */
