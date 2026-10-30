@@ -2,7 +2,7 @@
 
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
-import { importBookingsFromCal } from "@/lib/cal/api";
+import { syncBookingsFromCal } from "@/lib/cal/api";
 import { cancelPending, queueNow } from "@/lib/emails/queue";
 import { markRepliesRead } from "@/lib/emails/replies";
 import { EMAIL_STEPS, type EmailStep } from "@/lib/emails/schedule";
@@ -119,14 +119,25 @@ export async function skipLinkedIn(leadId: string) {
   refresh();
 }
 
-export type ImportState = { ok: boolean; message: string } | null;
+export type SyncState = { ok: boolean; message: string } | null;
 
-export async function importFromCal(): Promise<ImportState> {
+/** Re-checks Cal.com for bookings, saving any the webhook missed and planning their emails. */
+export async function syncFromCal(): Promise<SyncState> {
   try {
-    const count = await importBookingsFromCal();
+    const { saved, added } = await syncBookingsFromCal();
+    // New leads get the sequence the webhook would have planned; past calls skip every step.
+    for (const id of added) {
+      const lead = await getLead(id);
+      if (lead) await scheduleSequence(lead);
+    }
+    if (added.length) await processDueEmails();
     refresh();
-    return { ok: true, message: `Imported ${count} booking${count === 1 ? "" : "s"} from Cal.com.` };
+    const s = (n: number) => (n === 1 ? "" : "s");
+    return {
+      ok: true,
+      message: `Checked ${saved} booking${s(saved)}, ${added.length ? `added ${added.length} new lead${s(added.length)}` : "nothing new"}.`,
+    };
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : "Import failed." };
+    return { ok: false, message: err instanceof Error ? err.message : "Sync failed." };
   }
 }

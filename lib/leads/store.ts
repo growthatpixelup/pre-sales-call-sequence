@@ -172,11 +172,12 @@ export async function getLead(id: string): Promise<Lead | null> {
  * Creates or updates a lead from a Cal.com booking. Dashboard-owned columns (stage, internal
  * notes, history) are never overwritten. Pass `previousId` for a reschedule so the old
  * booking's lead moves to the new booking uid; `previousIds` tries several, newest first.
+ * Returns true if a new lead was created.
  */
 export async function upsertFromBooking(
   booking: BookingInput,
   opts: { source: Lead["source"]; eventType: string; previousId?: string | null; previousIds?: string[] },
-): Promise<void> {
+): Promise<boolean> {
   const db = supabase();
   const columns: Partial<LeadRow> = calColumns(booking);
 
@@ -202,7 +203,7 @@ export async function upsertFromBooking(
     const { error } = await db.from("leads").insert({ id: booking.id, ...columns, source: opts.source });
     if (!error) {
       await addEvent(booking.id, opts.eventType);
-      return;
+      return true;
     }
     // 23505 = unique violation: a duplicate delivery inserted it first, so update instead.
     if (error.code !== "23505") fail("save lead", error);
@@ -212,6 +213,7 @@ export async function upsertFromBooking(
   if (error) fail("update lead", error);
   // Re-importing an existing booking isn't news; webhook updates are.
   if (opts.source !== "import") await addEvent(booking.id, opts.eventType);
+  return false;
 }
 
 const RESCHEDULED = "booking_rescheduled";

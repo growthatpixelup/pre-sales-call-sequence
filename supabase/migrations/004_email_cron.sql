@@ -1,6 +1,8 @@
 -- Runs the email sender every minute. Run once in Supabase (SQL Editor) AFTER deploying the app.
 -- Replace the two placeholders first:
---   YOUR-APP-URL  → your Vercel domain, e.g. pre-sales-call-sequence.vercel.app
+--   YOUR-APP-URL  → your Vercel domain, e.g. pre-sales-call-sequence.vercel.app.
+--   Use the domain the app is served on: pg_net doesn't follow redirects, so an old domain that
+--   redirects to the new one silently stops the emails. Same for the Cal.com webhook URL.
 --   YOUR-CRON-SECRET → the CRON_SECRET value you set in Vercel
 
 create extension if not exists pg_cron;

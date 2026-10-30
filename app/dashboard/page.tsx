@@ -21,6 +21,7 @@ import { STAGE_LABELS } from "./_components/badges";
 import { BookingsChart } from "./_components/bookings-chart";
 import { RangeFilter } from "./_components/range-filter";
 import { SourceDonut } from "./_components/source-donut";
+import { SyncButton } from "./_components/sync-button";
 import { ReplyList } from "./_components/replies";
 import { Empty, Icon, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "./_components/ui";
 
@@ -124,6 +125,7 @@ async function Overview({ searchParams }: { searchParams: SearchParams }) {
               All leads
               <Icon name="next" />
             </Link>
+            {process.env.CAL_API_KEY ? <SyncButton /> : null}
           </RailActions>
         </>
       }
