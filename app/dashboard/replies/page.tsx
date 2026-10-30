@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { listReplies } from "@/lib/emails/replies";
 import { listLeads } from "@/lib/leads/store";
@@ -20,6 +21,7 @@ export default function RepliesPage() {
 }
 
 async function Replies() {
+  await connection();
   const [replies, leads] = await Promise.all([listReplies({ limit: 200 }).catch(() => null), listLeads()]);
   if (!replies) {
     return (
