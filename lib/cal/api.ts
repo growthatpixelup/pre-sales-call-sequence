@@ -6,6 +6,8 @@ import type { BookingInput, BookingStatus } from "@/lib/leads/types";
 const CAL_API_BASE = "https://api.cal.com/v2";
 const CAL_API_VERSION = "2026-05-01";
 const MAX_PAGES = 20;
+/** How far back a sync looks, by call start. Re-checking every booking ever made is too slow. */
+const SYNC_LOOKBACK_DAYS = 30;
 
 interface ApiAttendee {
   name?: string;
@@ -78,8 +80,9 @@ function bookingFromApi(b: ApiBooking): BookingInput {
 }
 
 /**
- * Pulls bookings from the Cal.com API into the lead store, catching any the webhook missed.
- * Returns how many were saved and the ids of leads that are new.
+ * Pulls recent bookings (calls from the last SYNC_LOOKBACK_DAYS on, upcoming included) from the
+ * Cal.com API into the lead store, catching any the webhook missed. Returns how many were saved
+ * and the ids of leads that are new.
  * Cal.com treats a reschedule as cancel-and-rebook, so each chain of reschedules is saved once,
  * as its latest booking, booked at the time of the first.
  */
@@ -87,6 +90,7 @@ export async function syncBookingsFromCal(): Promise<{ saved: number; added: str
   const apiKey = process.env.CAL_API_KEY;
   if (!apiKey) throw new Error("CAL_API_KEY is not set.");
   const eventTypeId = process.env.CAL_EVENT_TYPE_ID;
+  const since = new Date(Date.now() - SYNC_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   const bookings: ApiBooking[] = [];
   let cursor: string | null | undefined;
@@ -94,6 +98,7 @@ export async function syncBookingsFromCal(): Promise<{ saved: number; added: str
   for (let page = 0; page < MAX_PAGES; page++) {
     const url = new URL(`${CAL_API_BASE}/bookings`);
     url.searchParams.set("limit", "100");
+    url.searchParams.set("afterStart", since);
     if (eventTypeId) url.searchParams.set("eventTypeId", eventTypeId);
     if (cursor) url.searchParams.set("cursor", cursor);
 
@@ -123,10 +128,12 @@ export async function syncBookingsFromCal(): Promise<{ saved: number; added: str
     const first = earlier[earlier.length - 1];
     if (first?.createdAt) input.bookedAt = first.createdAt;
 
+    // The start of the chain may be older than the sync window; its lead still moves over.
+    const outside = (first ?? booking).rescheduledFromUid;
     const created = await upsertFromBooking(input, {
       source: "import",
       eventType: "imported",
-      previousIds: earlier.map((b) => b.uid),
+      previousIds: [...earlier.map((b) => b.uid), ...(outside && !byUid.has(outside) ? [outside] : [])],
     });
     if (created) added.push(booking.uid);
     // Leads saved for the replaced bookings by earlier imports are duplicates of this one.
