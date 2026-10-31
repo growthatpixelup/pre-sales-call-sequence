@@ -3,7 +3,9 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * Basic-auth gate for the dashboard. Set DASHBOARD_PASSWORD to turn it on, and DASHBOARD_USERNAME
  * to require a username too (otherwise any username works).
- * The Cal.com webhook lives under /api and is not affected; it is protected by its signature.
+ * Only /dashboard is matched. /api/webhooks/* and /api/cron/* stay public on purpose: their
+ * callers (Cal.com, Resend, Typefully, Supabase cron) have no session, and each route checks its
+ * own signature or CRON_SECRET.
  */
 export function proxy(request: NextRequest) {
   const password = process.env.DASHBOARD_PASSWORD;
