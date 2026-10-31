@@ -34,7 +34,8 @@ export function bookingFromWebhook(payload: Json, fallbackStatus: BookingStatus)
   const responses = (payload.responses ?? {}) as Record<string, Json | unknown>;
 
   const fields: RawField[] = Object.entries(responses).map(([key, entry]) => {
-    if (entry && typeof entry === "object" && "value" in (entry as Json)) {
+    // Each answer is { label, value, isHidden }. A question left blank has no value.
+    if (entry && typeof entry === "object" && ("value" in (entry as Json) || "label" in (entry as Json))) {
       const e = entry as Json;
       return { key, label: str(e.label), value: e.value };
     }
