@@ -51,6 +51,26 @@ export const emailConfig = {
         "rebuilt their brand, website, and sales system as one. Demo requests doubled in the first week after launch, and six months later they raised a $25M Series A.",
       link: "https://www.pixeluplabs.com/case-studies/greptile",
     },
+    {
+      id: "replay",
+      client: "Replay",
+      result: "look trustworthy at first glance",
+      description: "an AI startup that pays companies for their data",
+      problem: "nobody hands years of company records to a brand they don't trust",
+      whatWeDid:
+        "built their brand and website from scratch, then got brought back to design the product. Their CEO called us “the best agency I've ever worked with.”",
+      link: "https://www.pixeluplabs.com/case-studies/replay",
+    },
+    {
+      id: "henrylabs",
+      client: "Henry Labs",
+      result: "stand out in agentic commerce",
+      description: "the checkout behind AI shopping apps, already cited by Visa",
+      problem: "their brand looked early-stage in a crowded, same-sounding market",
+      whatWeDid:
+        "built their brand and website, then designed their checkout and dashboard in four weeks. By September, their checkout was powering a YC startup that grew from 9 to 90 stores in two weeks.",
+      link: "https://www.pixeluplabs.com/case-studies/henrylabs",
+    },
   ] satisfies CaseStudy[] as CaseStudy[],
 
   /** Email 1: "What our clients say: [reviews on Contra]". */
