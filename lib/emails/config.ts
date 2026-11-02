@@ -41,6 +41,16 @@ export const emailConfig = {
         "redesigned their brand, website, and product as one system. Since the redesign, their free-to-paid trial conversion is up 20%.",
       link: "https://www.pixeluplabs.com/case-studies/fuseai",
     },
+    {
+      id: "greptile",
+      client: "Greptile",
+      result: "double demo requests",
+      description: "a YC-backed AI code review platform",
+      problem: "they were moving upmarket, but their brand, website, and sales materials each told a different story",
+      whatWeDid:
+        "rebuilt their brand, website, and sales system as one. Demo requests doubled in the first week after launch, and six months later they raised a $25M Series A.",
+      link: "https://www.pixeluplabs.com/case-studies/greptile",
+    },
   ] satisfies CaseStudy[] as CaseStudy[],
 
   /** Email 1: "What our clients say: [reviews on Contra]". */
