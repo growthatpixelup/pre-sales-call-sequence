@@ -42,6 +42,7 @@ interface LeadRow {
   proposal_url: string | null;
   transcript_url: string | null;
   notes: string;
+  win_note: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -77,6 +78,7 @@ function fromRow(r: LeadRow): Lead {
     proposalUrl: r.proposal_url,
     transcriptUrl: r.transcript_url,
     notes: r.notes,
+    winNote: r.win_note ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -103,6 +105,7 @@ export interface LeadFields {
   proposalUrl: string | null;
   transcriptUrl: string | null;
   notes: string;
+  winNote: string | null;
 }
 
 function toColumns(f: Partial<LeadFields>, website?: string | null): Partial<LeadRow> {
@@ -130,6 +133,7 @@ function toColumns(f: Partial<LeadFields>, website?: string | null): Partial<Lea
   if (f.proposalUrl !== undefined) c.proposal_url = f.proposalUrl;
   if (f.transcriptUrl !== undefined) c.transcript_url = f.transcriptUrl;
   if (f.notes !== undefined) c.notes = f.notes;
+  if (f.winNote !== undefined) c.win_note = f.winNote;
   return c;
 }
 

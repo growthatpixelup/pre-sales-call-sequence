@@ -132,6 +132,8 @@ export interface Lead {
   proposalUrl: string | null;
   transcriptUrl: string | null;
   notes: string;
+  /** KAM wins: how we won it. */
+  winNote: string | null;
 
   createdAt: string;
   updatedAt: string;

@@ -9,6 +9,9 @@ import { listLeadEmails, type LeadEmail } from "@/lib/emails/queue";
 import { listReplies, splitQuoted, type LeadReply } from "@/lib/emails/replies";
 import { EMAIL_STEPS, STEP_LABELS } from "@/lib/emails/schedule";
 import { callStatus, formatDateTime, formatYmd, humaniseEvent } from "@/lib/format";
+import { suggestStakeholders } from "@/lib/kam/leads";
+import { listAccounts as listKamAccounts, listStakeholders } from "@/lib/kam/store";
+import { KAM_STAGE_LABELS } from "@/lib/kam/types";
 import { childLeads, getLead, listActivity } from "@/lib/leads/store";
 import {
   ACTIVITY_LABELS,
@@ -28,6 +31,8 @@ import { money } from "@/app/dashboard/_components/lead-bits";
 import { StageForm } from "@/app/dashboard/_components/stage-form";
 import { Callout, Empty, Icon, None, Page, PageSkeleton, RailActions, RailIntro, Rows, Section, Tag } from "@/app/dashboard/_components/ui";
 import { addActivity, saveLead, startProjectDeal, updateLeadStage } from "../actions";
+import { attributeLead, unattributeLead } from "@/app/dashboard/kam/actions";
+import { StakeholderSelect } from "@/app/dashboard/kam/_components/bits";
 
 export const metadata: Metadata = { title: "Lead · GTM OS" };
 
@@ -57,11 +62,13 @@ async function LeadDetail({
   const lead = await getLead(id);
   if (!lead) notFound();
 
-  const [activity, bookings, children, parent] = await Promise.all([
+  const [activity, bookings, children, parent, kam] = await Promise.all([
     listActivity(lead.id),
     listBookingsForLead(lead.id),
     childLeads(lead.id),
     lead.parentLeadId ? getLead(lead.parentLeadId) : null,
+    // KAM needs migration 011; the lead page works without it.
+    Promise.all([listStakeholders(), listKamAccounts()]).catch(() => null),
   ]);
   const calls: BookingWithEmails[] = await Promise.all(
     bookings.map(async (booking) => ({
@@ -202,6 +209,8 @@ async function LeadDetail({
           <Save />
         </form>
       </Section>
+
+      {kam && <KamSection leadId={lead.id} lead={lead} stakeholders={kam[0]} accounts={kam[1]} />}
 
       {(parent || children.length > 0) && (
         <Section label="Related deals">
@@ -405,5 +414,59 @@ function Calls({ calls }: { calls: BookingWithEmails[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function KamSection({
+  leadId,
+  lead,
+  stakeholders,
+  accounts,
+}: {
+  leadId: string;
+  lead: Lead;
+  stakeholders: Awaited<ReturnType<typeof listStakeholders>>;
+  accounts: Awaited<ReturnType<typeof listKamAccounts>>;
+}) {
+  const linked = stakeholders.filter((s) => s.leadId === leadId);
+  const company = new Map(accounts.map((a) => [a.id, a.company]));
+  if (linked.length) {
+    return (
+      <Section label="KAM">
+        <ul className="list">
+          {linked.map((s) => (
+            <li key={s.id}>
+              <div className="item">
+                <div className="min-w-0">
+                  <Link href={`/dashboard/kam/accounts/${s.accountId}`} className="item-title">
+                    {s.name} · {company.get(s.accountId)}
+                  </Link>
+                  <p className="m-0 mt-1 text-[0.92rem] text-muted">{KAM_STAGE_LABELS[s.stage]}</p>
+                </div>
+                <div className="item-actions">
+                  <form action={unattributeLead.bind(null, s.id)}>
+                    <button type="submit" className="action">
+                      Unlink
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    );
+  }
+  if (!stakeholders.length) return null;
+  const suggested = suggestStakeholders(lead, stakeholders, accounts);
+  return (
+    <Section label="KAM" aside={<p className="hint m-0">Link this lead to the stakeholder the team warmed up. Its Source becomes KAM.</p>}>
+      <form action={attributeLead.bind(null, leadId)} className="grid max-w-[68ch] gap-3">
+        <StakeholderSelect stakeholders={stakeholders} accounts={accounts} label="Attribute to" required first={suggested} />
+        <button type="submit" className="action justify-self-start">
+          Attribute to KAM
+        </button>
+      </form>
+    </Section>
   );
 }

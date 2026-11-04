@@ -14,6 +14,7 @@ export default function DashboardLayout({ children }: LayoutProps<"/dashboard">)
           <NavLink href="/dashboard/today">Today</NavLink>
           <NavLink href="/dashboard/pipeline">Pipeline</NavLink>
           <NavLink href="/dashboard/calls">Booked calls</NavLink>
+          <NavLink href="/dashboard/kam">KAM</NavLink>
           <Link href="/dashboard/leads/new" className="action">
             + Add lead
           </Link>
