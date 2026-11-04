@@ -5,6 +5,7 @@ import { getBooking, setBookingLead } from "@/lib/bookings/store";
 import { isInternal } from "@/lib/bookings/internal";
 import type { Booking } from "@/lib/bookings/types";
 import { formatDateTime } from "@/lib/format";
+import { fromAnswer } from "./attribution";
 import { companyDomain } from "./dedup";
 import { createLead, findMatchingLead, getLead, logActivity, setStage, touchLead, updateLead } from "./store";
 import type { Stage } from "./types";
@@ -43,13 +44,15 @@ export async function attachBooking(bookingId: string, { fresh }: { fresh: boole
       await setBookingLead(booking.id, leadId);
       await logActivity(leadId, "booking", `${when} (matched on ${match.on})`, { at: booking.bookedAt, touch: true });
     } else {
+      // This booking is the first touch, so their answer names the channel. Unknown stays Cal.
+      const channel = fromAnswer(booking.referralSource);
       const lead = await createLead(
         {
           contactName: booking.name,
           company: booking.businessName,
           email: booking.email || null,
-          origin: "cal",
-          originDetail: booking.referralSource,
+          origin: channel?.origin ?? "cal",
+          originDetail: channel ? channel.detail : booking.referralSource,
           bookingSource: booking.referralSource,
           estimatedPrice: estimatedValue(booking),
         },

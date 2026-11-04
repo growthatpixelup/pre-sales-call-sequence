@@ -197,8 +197,8 @@ async function LeadDetail({
       <Section label="Origin" aside={<p className="hint m-0">First touch. Channels are credited from this.</p>}>
         <form action={saveLead.bind(null, lead.id)} className="form-grid">
           <Select name="origin" label="Source" value={lead.origin} options={ORIGINS.map((o) => [o, ORIGIN_LABELS[o]])} />
-          <Field name="originDetail" label="Sub-source" value={lead.originDetail} placeholder="Account, campaign, referrer, job, UTM" />
-          <Field name="bookingSource" label="Booking source" value={lead.bookingSource} placeholder="“How did you find us?” / UTM" wide />
+          <Field name="originDetail" label="Sub-source" value={lead.originDetail} placeholder="Account, campaign, referrer, job" />
+          <Field name="bookingSource" label="Booking source" value={lead.bookingSource} placeholder="“How did you find us?” answer" wide />
           <Save />
         </form>
       </Section>
