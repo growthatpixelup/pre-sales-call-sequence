@@ -1,4 +1,4 @@
-import type { BookingInput, ExtraField, Lead, RawField } from "./types";
+import type { BookingInput, ExtraField, Booking, RawField } from "./types";
 
 type MappedField =
   | "name"
@@ -102,13 +102,11 @@ export function normaliseUrl(value: string | null): string | null {
 export function bookingToLeadFields(
   booking: BookingInput,
 ): Omit<
-  Lead,
+  Booking,
   | "legacy"
   | "bookedAt"
-  | "stage"
-  | "stageChangedAt"
-  | "dealValue"
-  | "internalNotes"
+  | "leadId"
+  | "lead"
   | "emailSettings"
   | "events"
   | "source"

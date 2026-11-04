@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 
 export interface LeadReply {
   id: string;
-  leadId: string | null;
+  bookingId: string | null;
   fromEmail: string;
   fromName: string | null;
   subject: string;
@@ -17,7 +17,7 @@ export interface LeadReply {
 
 interface Row {
   id: string;
-  lead_id: string | null;
+  booking_id: string | null;
   from_email: string;
   from_name: string | null;
   subject: string;
@@ -30,7 +30,7 @@ interface Row {
 function fromRow(r: Row): LeadReply {
   return {
     id: r.id,
-    leadId: r.lead_id,
+    bookingId: r.booking_id,
     fromEmail: r.from_email,
     fromName: r.from_name,
     subject: r.subject,
@@ -97,7 +97,7 @@ const stripRe = (subject: string) => subject.replace(/^\s*((re|fwd?|aw|sv)\s*:\s
 export async function matchLead(fromEmail: string, subject: string): Promise<string | null> {
   const db = supabase();
   const byEmail = await db
-    .from("leads")
+    .from("bookings")
     .select("id")
     .ilike("email", fromEmail.replace(/[\\%_]/g, "\\$&"))
     .order("start_time", { ascending: false })
@@ -107,16 +107,16 @@ export async function matchLead(fromEmail: string, subject: string): Promise<str
 
   const original = stripRe(subject);
   if (!original) return null;
-  const bySubject = await db.from("lead_emails").select("lead_id").eq("status", "sent").eq("subject", original);
+  const bySubject = await db.from("lead_emails").select("booking_id").eq("status", "sent").eq("subject", original);
   if (bySubject.error) fail("match reply", bySubject.error);
-  const leads = new Set((bySubject.data ?? []).map((r) => r.lead_id as string));
+  const leads = new Set((bySubject.data ?? []).map((r) => r.booking_id as string));
   return leads.size === 1 ? [...leads][0] : null;
 }
 
 /** Saves a reply. Returns false if it was already saved (Resend retries webhooks). */
 export async function saveReply(reply: {
   resendEmailId: string;
-  leadId: string | null;
+  bookingId: string | null;
   fromEmail: string;
   fromName: string | null;
   subject: string;
@@ -126,7 +126,7 @@ export async function saveReply(reply: {
 }): Promise<boolean> {
   const { error } = await supabase().from("lead_replies").insert({
     resend_email_id: reply.resendEmailId,
-    lead_id: reply.leadId,
+    booking_id: reply.bookingId,
     from_email: reply.fromEmail,
     from_name: reply.fromName,
     subject: reply.subject,
@@ -140,9 +140,9 @@ export async function saveReply(reply: {
   fail("save reply", error);
 }
 
-export async function listReplies(opts: { leadId?: string; unreadOnly?: boolean; limit?: number } = {}) {
+export async function listReplies(opts: { bookingId?: string; unreadOnly?: boolean; limit?: number } = {}) {
   let query = supabase().from("lead_replies").select("*").order("received_at", { ascending: false });
-  if (opts.leadId) query = query.eq("lead_id", opts.leadId);
+  if (opts.bookingId) query = query.eq("booking_id", opts.bookingId);
   if (opts.unreadOnly) query = query.is("read_at", null);
   if (opts.limit) query = query.limit(opts.limit);
   const { data, error } = await query;
@@ -160,10 +160,10 @@ export async function unreadReplyCount(): Promise<number> {
 }
 
 /** Marks replies read: one reply, every reply from a lead, or all of them. */
-export async function markRepliesRead(filter: { id?: string; leadId?: string } = {}) {
+export async function markRepliesRead(filter: { id?: string; bookingId?: string } = {}) {
   let query = supabase().from("lead_replies").update({ read_at: new Date().toISOString() }).is("read_at", null);
   if (filter.id) query = query.eq("id", filter.id);
-  if (filter.leadId) query = query.eq("lead_id", filter.leadId);
+  if (filter.bookingId) query = query.eq("booking_id", filter.bookingId);
   const { error } = await query;
   if (error) fail("mark replies read", error);
 }

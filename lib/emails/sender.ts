@@ -2,8 +2,8 @@ import "server-only";
 
 import { Resend } from "resend";
 import { nextTwoSlots } from "@/lib/cal/slots";
-import { addLeadEvent, getLead } from "@/lib/leads/store";
-import type { Lead } from "@/lib/leads/types";
+import { addBookingEvent, getBooking } from "@/lib/bookings/store";
+import type { Booking } from "@/lib/bookings/types";
 import { missingEmailConfig } from "./config";
 import {
   applyPlan,
@@ -41,7 +41,7 @@ export function emailSetupProblems(): string[] {
  * Plans a lead's sequence. After a reschedule it's rebuilt from the new call time: the
  * confirmation and call-day emails go out again, Email 1 and Email 2 never do.
  */
-export async function scheduleSequence(lead: Lead, { rescheduled = false } = {}) {
+export async function scheduleSequence(lead: Booking, { rescheduled = false } = {}) {
   if (lead.bookingStatus !== "accepted") return;
   const sentEmails = (await listLeadEmails(lead.id)).filter((e) => e.status === "sent");
   const sent = new Set(sentEmails.map((e) => e.step));
@@ -52,17 +52,17 @@ export async function scheduleSequence(lead: Lead, { rescheduled = false } = {})
   await applyPlan(lead, plan, resend);
 }
 
-export async function cancelSequence(leadId: string, reason: string) {
-  await cancelPending(leadId, reason);
+export async function cancelSequence(bookingId: string, reason: string) {
+  await cancelPending(bookingId, reason);
 }
 
 /** Queues the no-show nudge to go out on the next run. */
-export async function queueNoShowNudge(leadId: string, note: string) {
-  const queued = await queueNow(leadId, "no_show", note);
-  if (queued) await addLeadEvent(leadId, "no_show_nudge_queued", note);
+export async function queueNoShowNudge(bookingId: string, note: string) {
+  const queued = await queueNow(bookingId, "no_show", note);
+  if (queued) await addBookingEvent(bookingId, "no_show_nudge_queued", note);
 }
 
-export async function emailContext(lead: Lead, email: Pick<LeadEmail, "step">): Promise<EmailContext> {
+export async function emailContext(lead: Booking, email: Pick<LeadEmail, "step">): Promise<EmailContext> {
   const ctx: EmailContext = { sendAt: new Date() };
   if (email.step === "no_show" && lead.eventTypeId) {
     ctx.slots = await nextTwoSlots(lead.eventTypeId, lead.timeZone);
@@ -71,7 +71,7 @@ export async function emailContext(lead: Lead, email: Pick<LeadEmail, "step">): 
 }
 
 async function sendOne(email: LeadEmail, problems: string[]) {
-  const lead = await getLead(email.leadId);
+  const lead = await getBooking(email.bookingId);
   if (!lead) return markCancelled(email.id, "Lead no longer exists");
   if (lead.bookingStatus === "cancelled" || lead.bookingStatus === "rejected") {
     return markCancelled(email.id, "Booking was cancelled");
@@ -110,7 +110,7 @@ async function sendOne(email: LeadEmail, problems: string[]) {
 
   if (error || !data) return markFailed(email, error?.message ?? "Unknown Resend error");
   await markSent(email.id, data.id, rendered.subject);
-  await addLeadEvent(lead.id, "email_sent", STEP_LABELS[email.step]);
+  await addBookingEvent(lead.id, "email_sent", STEP_LABELS[email.step]);
   // Email 2 follows the morning after Email 1, which is sent by hand.
   if (email.step === "case_study") await applyPlan(lead, [planHowWeWork(lead, new Date())]);
 }

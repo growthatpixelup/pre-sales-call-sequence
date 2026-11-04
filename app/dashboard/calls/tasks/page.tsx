@@ -3,8 +3,8 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { loadTasks, type Task, type TaskKind } from "@/lib/tasks";
-import { TaskList } from "../_components/task-list";
-import { Empty, Icon, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "../_components/ui";
+import { TaskList } from "@/app/dashboard/_components/task-list";
+import { Empty, Icon, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "@/app/dashboard/_components/ui";
 
 export const metadata: Metadata = { title: "Tasks · Dashboard" };
 
@@ -75,8 +75,8 @@ async function Tasks() {
 
 function nextHref(task: Task) {
   return task.kind === "email" && task.email
-    ? `/dashboard/leads/${task.lead.id}/emails/${task.email.step}`
-    : `/dashboard/leads/${task.lead.id}`;
+    ? `/dashboard/calls/bookings/${task.lead.id}/emails/${task.email.step}`
+    : `/dashboard/calls/bookings/${task.lead.id}`;
 }
 
 function Count({ n }: { n: number }) {

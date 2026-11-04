@@ -6,11 +6,11 @@ import type { EmailStatus, LeadEmail } from "@/lib/emails/queue";
 import { EMAIL_STEPS, STEP_LABELS } from "@/lib/emails/schedule";
 import { emailSetupProblems } from "@/lib/emails/sender";
 import { formatDateTime } from "@/lib/format";
-import type { Lead } from "@/lib/leads/types";
+import type { Booking } from "@/lib/bookings/types";
 import { loadTasks } from "@/lib/tasks";
-import { EmailStatusBadge } from "../_components/badges";
-import { TaskList } from "../_components/task-list";
-import { Callout, Empty, Icon, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "../_components/ui";
+import { EmailStatusBadge } from "@/app/dashboard/_components/badges";
+import { TaskList } from "@/app/dashboard/_components/task-list";
+import { Callout, Empty, Icon, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "@/app/dashboard/_components/ui";
 
 export const metadata: Metadata = { title: "Emails · Dashboard" };
 
@@ -57,12 +57,12 @@ async function Emails() {
           />
           <RailActions>
             {firstDraft ? (
-              <Link href={`/dashboard/leads/${firstDraft.leadId}/emails/case_study`} className="btn-primary">
+              <Link href={`/dashboard/calls/bookings/${firstDraft.bookingId}/emails/case_study`} className="btn-primary">
                 Prepare next Email 1
                 <Icon name="send" />
               </Link>
             ) : null}
-            <Link href="/dashboard/leads?status=upcoming" className="btn">
+            <Link href="/dashboard/calls/bookings?status=upcoming" className="btn">
               Upcoming calls
               <Icon name="next" />
             </Link>
@@ -91,7 +91,7 @@ async function Emails() {
       <Section
         label={`Needs you · ${tasks.length}`}
         aside={
-          <Link href="/dashboard/tasks" className="action">
+          <Link href="/dashboard/calls/tasks" className="action">
             All tasks
             <Icon name="next" />
           </Link>
@@ -134,13 +134,13 @@ function since() {
 }
 
 /** Splits the activity into what the page shows. Kept outside the component because it reads the clock. */
-function buildView(leads: Lead[], activity: LeadEmail[]) {
+function buildView(leads: Booking[], activity: LeadEmail[]) {
   const now = Date.now();
   const since = now - DAYS * 86_400_000;
   const leadsById = new Map(leads.map((l) => [l.id, l]));
   // Emails of deleted, internal or test leads aren't shown.
-  const emails = activity.filter((e) => leadsById.has(e.leadId));
-  const lead = (e: LeadEmail) => leadsById.get(e.leadId)!;
+  const emails = activity.filter((e) => leadsById.has(e.bookingId));
+  const lead = (e: LeadEmail) => leadsById.get(e.bookingId)!;
   const upcomingCall = (e: LeadEmail) => lead(e).bookingStatus === "accepted" && Date.parse(lead(e).startTime) > now;
   // Scheduled emails this late show up as overdue tasks instead.
   const scheduled = emails
@@ -220,7 +220,7 @@ function EmailList({
   when,
 }: {
   emails: LeadEmail[];
-  lead: (e: LeadEmail) => Lead;
+  lead: (e: LeadEmail) => Booking;
   when: (e: LeadEmail) => string;
 }) {
   return (
@@ -228,7 +228,7 @@ function EmailList({
       {emails.map((e) => (
         <li key={e.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-1 py-3">
           <span className="min-w-0">
-            <Link href={`/dashboard/leads/${e.leadId}`} className="link">
+            <Link href={`/dashboard/calls/bookings/${e.bookingId}`} className="link">
               {lead(e).name}
             </Link>
             <span className="text-muted"> · {STEP_LABELS[e.step]}</span>

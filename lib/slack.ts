@@ -1,9 +1,9 @@
 import "server-only";
 
 import { formatCallTime } from "@/lib/format";
-import { bookingToLeadFields, formAnswers } from "@/lib/leads/fields";
-import { isInternal } from "@/lib/leads/internal";
-import type { BookingInput } from "@/lib/leads/types";
+import { bookingToLeadFields, formAnswers } from "@/lib/bookings/fields";
+import { isInternal } from "@/lib/bookings/internal";
+import type { BookingInput } from "@/lib/bookings/types";
 
 /**
  * "A call was booked" messages, posted to Slack by the bot behind SLACK_BOT_TOKEN (it needs the

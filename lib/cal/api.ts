@@ -1,7 +1,8 @@
 import "server-only";
 
-import { recordReschedules, removeLeads, upsertFromBooking } from "@/lib/leads/store";
-import type { BookingInput, BookingStatus } from "@/lib/leads/types";
+import { recordReschedules, removeBookings, upsertFromBooking } from "@/lib/bookings/store";
+import { attachBooking } from "@/lib/leads/from-booking";
+import type { BookingInput, BookingStatus } from "@/lib/bookings/types";
 
 const CAL_API_BASE = "https://api.cal.com/v2";
 const CAL_API_VERSION = "2026-05-01";
@@ -136,8 +137,10 @@ export async function syncBookingsFromCal(): Promise<{ saved: number; added: str
       previousIds: [...earlier.map((b) => b.uid), ...(outside && !byUid.has(outside) ? [outside] : [])],
     });
     if (created) added.push(booking.uid);
+    // Bookings the webhook missed join the pipeline here; linked ones are left alone.
+    await attachBooking(booking.uid, { fresh: created });
     // Leads saved for the replaced bookings by earlier imports are duplicates of this one.
-    await removeLeads(earlier.map((b) => b.uid));
+    await removeBookings(earlier.map((b) => b.uid));
     await recordReschedules(
       booking.uid,
       earlier.map((b) => b.start),

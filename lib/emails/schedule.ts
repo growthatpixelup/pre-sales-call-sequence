@@ -1,4 +1,4 @@
-import type { Lead } from "@/lib/leads/types";
+import type { Booking } from "@/lib/bookings/types";
 import { emailConfig } from "./config";
 import { DAY, HOUR, MINUTE, addDays, atLocalTime, localDate, localHour, safeTimeZone } from "./time";
 
@@ -43,7 +43,7 @@ export const PRE_CALL_STEPS: EmailStep[] = [
  * and `caseStudySentAt` is when Email 1 went out, if it did.
  */
 export function planSequence(
-  lead: Lead,
+  lead: Booking,
   now = new Date(),
   alreadySent = new Set<EmailStep>(),
   caseStudySentAt: Date | null = null,
@@ -112,7 +112,7 @@ export function planSequence(
 }
 
 /** Email 2: 9 AM (their time) the day after Email 1 went out. Skipped if the call is that day or sooner. */
-export function planHowWeWork(lead: Lead, caseStudySentAt: Date, now = new Date()): PlannedEmail {
+export function planHowWeWork(lead: Booking, caseStudySentAt: Date, now = new Date()): PlannedEmail {
   const tz = safeTimeZone(lead.timeZone);
   const callDay = localDate(new Date(lead.startTime), tz);
   const day = addDays(localDate(caseStudySentAt, tz), 1);
@@ -132,7 +132,7 @@ function outOfQuietHours(date: Date, tz: string): Date {
 }
 
 /** Whether Email 3 is going out the day before the call (changes "today" to "tomorrow"). */
-export function isDayBefore(sendAt: Date, lead: Lead): boolean {
+export function isDayBefore(sendAt: Date, lead: Booking): boolean {
   const tz = safeTimeZone(lead.timeZone);
   return localDate(sendAt, tz) < localDate(new Date(lead.startTime), tz);
 }

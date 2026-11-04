@@ -1,5 +1,6 @@
 import { addDays, atLocalTime, localDate, safeTimeZone } from "@/lib/emails/time";
-import { LEAD_STAGES, OPEN_STAGES, type Lead, type LeadStage } from "@/lib/leads/types";
+import type { Booking } from "@/lib/bookings/types";
+import { OPEN_STAGES, STAGES, WON_STAGES, type Stage } from "@/lib/leads/types";
 
 /**
  * Pipeline analytics for the overview page. Days are calendar days in DASHBOARD_TIMEZONE. A call
@@ -32,18 +33,28 @@ export function parseBudget(text: string | null): { min: number; max: number | n
 }
 
 /** The midpoint of the lead's investment range (or the old form's budget answer). */
-export function estimatedValue(lead: Lead): number | null {
+export function estimatedValue(lead: Booking): number | null {
   const range = parseBudget(lead.investmentRange ?? lead.legacy.budget);
   if (!range) return null;
   return range.max == null ? range.min : (range.min + range.max) / 2;
 }
 
-/** The agreed deal value if set, otherwise the estimate from their investment range. */
-export function leadValue(lead: Lead): number | null {
-  return lead.dealValue ?? estimatedValue(lead);
+/**
+ * The value of a booking's lead: its closed price, else its estimate, else the middle of the
+ * investment range they gave. A lead with several bookings counts once per booking here.
+ */
+export function bookingValue(booking: Booking): number | null {
+  return booking.lead?.closedPrice ?? booking.lead?.estimatedPrice ?? estimatedValue(booking);
 }
 
-const sumValues = (leads: Lead[]) => leads.reduce((total, lead) => total + (leadValue(lead) ?? 0), 0);
+/** The pipeline stage of a booking's lead. Bookings without a lead read as Call booked. */
+export function bookingStage(booking: Booking): Stage {
+  return booking.lead?.stage ?? "call_booked";
+}
+
+const isWon = (booking: Booking) => WON_STAGES.includes(bookingStage(booking));
+
+const sumValues = (leads: Booking[]) => leads.reduce((total, lead) => total + (bookingValue(lead) ?? 0), 0);
 
 // ---------------------------------------------------------------------------------------------
 // Date ranges
@@ -179,7 +190,7 @@ export function formatRange({ from, to }: DayRange) {
 // ---------------------------------------------------------------------------------------------
 // Stats
 
-const isLive = (lead: Lead) => lead.bookingStatus !== "cancelled" && lead.bookingStatus !== "rejected";
+const isLive = (lead: Booking) => lead.bookingStatus !== "cancelled" && lead.bookingStatus !== "rejected";
 
 export interface PeriodStats {
   /** Calls booked in the period, including ones later cancelled. A rescheduled call counts once. */
@@ -199,7 +210,7 @@ export interface PeriodStats {
 }
 
 function periodStats(
-  leads: Lead[],
+  leads: Booking[],
   reschedules: Map<string, number>,
   range: DayRange,
   tz: string,
@@ -208,7 +219,7 @@ function periodStats(
   const b = bounds(range, tz);
   const booked = leads.filter((l) => within(l.bookedAt, b));
   const live = booked.filter(isLive);
-  const won = leads.filter((l) => l.stage === "won" && within(l.stageChangedAt ?? l.updatedAt, b));
+  const won = leads.filter((l) => isWon(l) && within(l.lead?.stageChangedAt ?? l.updatedAt, b));
   return {
     booked: booked.length,
     cancelled: booked.length - live.length,
@@ -217,7 +228,7 @@ function periodStats(
       (l) => l.bookingStatus === "accepted" && within(l.endTime, b) && Date.parse(l.endTime) <= now,
     ).length,
     budget: sumValues(live),
-    unpriced: live.filter((l) => leadValue(l) == null).length,
+    unpriced: live.filter((l) => bookingValue(l) == null).length,
     won: won.length,
     wonValue: sumValues(won),
   };
@@ -265,7 +276,7 @@ function bucketLabel(part: DayRange, unit: "day" | "week" | "month") {
   return formatDay(part.from, { day: "numeric", month: "short" });
 }
 
-function bookingSeries(leads: Lead[], range: ResolvedRange, tz: string) {
+function bookingSeries(leads: Booking[], range: ResolvedRange, tz: string) {
   const current = splitRange(range.current);
   // The comparison period is split the same way, then matched bucket by bucket.
   const previous = range.previous ? splitRange(range.previous).parts : null;
@@ -287,18 +298,18 @@ function bookingSeries(leads: Lead[], range: ResolvedRange, tz: string) {
 }
 
 export interface StageRow {
-  stage: LeadStage;
+  stage: Stage;
   count: number;
   value: number;
 }
 
 /** Who is behind the period's numbers. Each list is soonest call first. */
 export interface Breakdown {
-  live: Lead[];
-  cancelled: Lead[];
+  live: Booking[];
+  cancelled: Booking[];
   /** With how many times each call was moved. */
-  rescheduled: { lead: Lead; times: number }[];
-  unpriced: Lead[];
+  rescheduled: { lead: Booking; times: number }[];
+  unpriced: Booking[];
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -341,7 +352,7 @@ export interface AttributionRow {
   sources: { source: string; booked: number; live: number }[];
 }
 
-function attribution(booked: Lead[]): AttributionRow[] {
+function attribution(booked: Booking[]): AttributionRow[] {
   return SOURCE_PILLARS.map((pillar) => {
     const inPillar = booked.filter((l) => sourceOf(l.referralSource).pillar === pillar);
     const live = inPillar.filter(isLive);
@@ -357,7 +368,7 @@ function attribution(booked: Lead[]): AttributionRow[] {
       pillar,
       booked: inPillar.length,
       live: live.length,
-      won: live.filter((l) => l.stage === "won").length,
+      won: live.filter(isWon).length,
       value: sumValues(live),
       sources: [...sources.values()].sort((a, b) => b.booked - a.booked),
     };
@@ -366,7 +377,7 @@ function attribution(booked: Lead[]): AttributionRow[] {
 
 /** `reschedules` is how many times each lead's call was moved (lead id → count). */
 export function buildAnalytics(
-  leads: Lead[],
+  leads: Booking[],
   range: ResolvedRange,
   nowMs: number,
   reschedules: Map<string, number> = new Map(),
@@ -375,7 +386,7 @@ export function buildAnalytics(
   const b = bounds(range.current, tz);
   const bookedInRange = leads.filter((l) => within(l.bookedAt, b));
   const liveInRange = bookedInRange.filter(isLive);
-  const byCall = (x: Lead, y: Lead) => Date.parse(x.startTime) - Date.parse(y.startTime);
+  const byCall = (x: Booking, y: Booking) => Date.parse(x.startTime) - Date.parse(y.startTime);
   const breakdown: Breakdown = {
     live: [...liveInRange].sort(byCall),
     cancelled: bookedInRange.filter((l) => !isLive(l)).sort(byCall),
@@ -383,16 +394,15 @@ export function buildAnalytics(
       .filter((l) => reschedules.has(l.id))
       .sort(byCall)
       .map((lead) => ({ lead, times: reschedules.get(lead.id)! })),
-    unpriced: liveInRange.filter((l) => leadValue(l) == null).sort(byCall),
+    unpriced: liveInRange.filter((l) => bookingValue(l) == null).sort(byCall),
   };
 
-  const stages: StageRow[] = LEAD_STAGES.map((stage) => {
-    const inStage = liveInRange.filter((l) => l.stage === stage);
+  const stages: StageRow[] = STAGES.map((stage) => {
+    const inStage = liveInRange.filter((l) => bookingStage(l) === stage);
     return { stage, count: inStage.length, value: sumValues(inStage) };
   });
-  // A deal waiting on payment is agreed, so it counts as a win here.
-  const won = liveInRange.filter((l) => l.stage === "won" || l.stage === "payment").length;
-  const lost = liveInRange.filter((l) => l.stage === "lost").length;
+  const won = liveInRange.filter(isWon).length;
+  const lost = liveInRange.filter((l) => bookingStage(l) === "lost").length;
 
   return {
     current: periodStats(leads, reschedules, range.current, tz, nowMs),
@@ -406,19 +416,19 @@ export function buildAnalytics(
 }
 
 /** What the pipeline looks like right now, regardless of the date range. */
-export function pipelineSnapshot(leads: Lead[], nowMs: number) {
+export function pipelineSnapshot(leads: Booking[], nowMs: number) {
   const weekAhead = nowMs + 7 * 86_400_000;
   const upcoming = leads
     .filter((l) => l.bookingStatus === "accepted" && Date.parse(l.startTime) > nowMs)
     .sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
-  const open = leads.filter((l) => isLive(l) && OPEN_STAGES.includes(l.stage));
+  const open = leads.filter((l) => isLive(l) && OPEN_STAGES.includes(bookingStage(l)));
   return {
     upcoming,
     upcomingThisWeek: upcoming.filter((l) => Date.parse(l.startTime) <= weekAhead).length,
     pendingConfirmation: leads.filter((l) => l.bookingStatus === "pending" && Date.parse(l.startTime) > nowMs).length,
     open: open.length,
     openValue: sumValues(open),
-    unpriced: open.filter((l) => leadValue(l) == null).length,
+    unpriced: open.filter((l) => bookingValue(l) == null).length,
   };
 }
 

@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { listReplies } from "@/lib/emails/replies";
-import { listLeads } from "@/lib/leads/store";
-import { markAllRepliesRead } from "../actions";
-import { ReplyList } from "../_components/replies";
-import { Callout, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "../_components/ui";
+import { listBookings } from "@/lib/bookings/store";
+import { markAllRepliesRead } from "@/app/dashboard/actions";
+import { ReplyList } from "@/app/dashboard/_components/replies";
+import { Callout, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "@/app/dashboard/_components/ui";
 
 export const metadata: Metadata = { title: "Replies · Dashboard" };
 
@@ -22,7 +22,7 @@ export default function RepliesPage() {
 
 async function Replies() {
   await connection();
-  const [replies, leads] = await Promise.all([listReplies({ limit: 200 }).catch(() => null), listLeads()]);
+  const [replies, leads] = await Promise.all([listReplies({ limit: 200 }).catch(() => null), listBookings()]);
   if (!replies) {
     return (
       <Page rail={<RailIntro title={TITLE} sub={SUB} />}>

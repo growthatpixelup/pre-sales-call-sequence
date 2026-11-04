@@ -6,15 +6,15 @@ import { EMAIL_STEPS, STEP_LABELS, type EmailStep } from "@/lib/emails/schedule"
 import { emailContext, emailSetupProblems } from "@/lib/emails/sender";
 import { defaultEmailSettings, renderEmail } from "@/lib/emails/templates";
 import { callStatus, formatDateTime } from "@/lib/format";
-import { getLead } from "@/lib/leads/store";
-import type { Lead } from "@/lib/leads/types";
-import { saveEmailSettings, sendCaseStudy } from "../../../../actions";
-import { CaseStudyComposer } from "../../../../_components/case-study-composer";
-import { Callout, Page, PageSkeleton, RailIntro, Rows, Section } from "../../../../_components/ui";
+import { getBooking } from "@/lib/bookings/store";
+import type { Booking } from "@/lib/bookings/types";
+import { saveEmailSettings, sendCaseStudy } from "@/app/dashboard/actions";
+import { CaseStudyComposer } from "@/app/dashboard/_components/case-study-composer";
+import { Callout, Page, PageSkeleton, RailIntro, Rows, Section } from "@/app/dashboard/_components/ui";
 
 export const metadata: Metadata = { title: "Email preview · Dashboard" };
 
-export default function EmailPreviewPage({ params }: PageProps<"/dashboard/leads/[id]/emails/[step]">) {
+export default function EmailPreviewPage({ params }: PageProps<"/dashboard/calls/bookings/[id]/emails/[step]">) {
   return (
     <Suspense fallback={<PageSkeleton title="Email" label="Loading email" />}>
       <Preview params={params} />
@@ -25,8 +25,8 @@ export default function EmailPreviewPage({ params }: PageProps<"/dashboard/leads
 async function Preview({ params }: { params: Promise<{ id: string; step: string }> }) {
   const { id, step } = await params;
   if (!EMAIL_STEPS.includes(step as EmailStep)) notFound();
-  const leadId = decodeURIComponent(id);
-  const [lead, emails] = await Promise.all([getLead(leadId), listLeadEmails(leadId)]);
+  const bookingId = decodeURIComponent(id);
+  const [lead, emails] = await Promise.all([getBooking(bookingId), listLeadEmails(bookingId)]);
   if (!lead) notFound();
 
   const email = emails.find((e) => e.step === step);
@@ -48,7 +48,7 @@ async function Preview({ params }: { params: Promise<{ id: string; step: string 
     <Page
       rail={
         <>
-          <RailIntro title={STEP_LABELS[step as EmailStep]} back={{ href: `/dashboard/leads/${lead.id}`, label: lead.name }} />
+          <RailIntro title={STEP_LABELS[step as EmailStep]} back={{ href: `/dashboard/calls/bookings/${lead.id}`, label: lead.name }} />
           <Rows
             rows={[
               ["From", process.env.EMAIL_FROM ?? "EMAIL_FROM not set"],
@@ -68,7 +68,7 @@ async function Preview({ params }: { params: Promise<{ id: string; step: string 
 }
 
 /** Email 1 is personalised and sent by hand: the form answers to work from, the form, and a live preview. */
-function ComposeCaseStudy({ lead, emails }: { lead: Lead; emails: LeadEmail[] }) {
+function ComposeCaseStudy({ lead, emails }: { lead: Booking; emails: LeadEmail[] }) {
   const email = emails.find((e) => e.step === "case_study");
   const expect = emails.find((e) => e.step === "what_to_expect");
   const problems = emailSetupProblems();
@@ -95,7 +95,7 @@ function ComposeCaseStudy({ lead, emails }: { lead: Lead; emails: LeadEmail[] })
         <>
           <RailIntro
             title={STEP_LABELS.case_study}
-            back={{ href: `/dashboard/leads/${lead.id}`, label: lead.name }}
+            back={{ href: `/dashboard/calls/bookings/${lead.id}`, label: lead.name }}
             sub={
               <>
                 Pick the case study, write the company line and closing question, check the preview, then send.

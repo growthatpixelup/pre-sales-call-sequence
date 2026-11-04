@@ -1,17 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
-import { formatMoney, leadValue } from "@/lib/analytics";
+import { bookingStage, bookingValue, formatMoney } from "@/lib/analytics";
 import { callStatus, formatDateTime, type CallStatus } from "@/lib/format";
-import { listLeads } from "@/lib/leads/store";
-import { LEAD_STAGES, type Lead } from "@/lib/leads/types";
-import { updateStage } from "../actions";
-import { CallStatusBadge, STAGE_LABELS } from "../_components/badges";
-import { SyncButton } from "../_components/sync-button";
-import { StageSelect } from "../_components/stage-select";
-import { None, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "../_components/ui";
+import { listBookings } from "@/lib/bookings/store";
+import type { Booking } from "@/lib/bookings/types";
+import { STAGES, WON_STAGES } from "@/lib/leads/types";
+import { updateLeadStage } from "@/app/dashboard/leads/actions";
+import { CallStatusBadge, STAGE_LABELS } from "@/app/dashboard/_components/badges";
+import { SyncButton } from "@/app/dashboard/_components/sync-button";
+import { StageSelect } from "@/app/dashboard/_components/stage-select";
+import { None, Page, PageSkeleton, RailActions, RailIntro, Rows, Section } from "@/app/dashboard/_components/ui";
 
-export const metadata: Metadata = { title: "Leads · Dashboard" };
+export const metadata: Metadata = { title: "Bookings · Dashboard" };
 
 const STATUS_TABS: { value: string; label: string }[] = [
   { value: "all", label: "All" },
@@ -22,12 +23,12 @@ const STATUS_TABS: { value: string; label: string }[] = [
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
 
-const TITLE = "Leads";
+const TITLE = "Bookings";
 const SUB = "Everyone who booked a call through Cal.com, with their form answers.";
 
-export default function LeadsPage({ searchParams }: PageProps<"/dashboard/leads">) {
+export default function LeadsPage({ searchParams }: PageProps<"/dashboard/calls/bookings">) {
   return (
-    <Suspense fallback={<PageSkeleton title={TITLE} sub={SUB} label="Loading leads" />}>
+    <Suspense fallback={<PageSkeleton title={TITLE} sub={SUB} label="Loading bookings" />}>
       <LeadsView searchParams={searchParams} />
     </Suspense>
   );
@@ -43,7 +44,7 @@ async function LeadsView({ searchParams }: { searchParams: SearchParams }) {
   const status = param(sp.status) ?? "all";
   const stage = param(sp.stage) ?? "all";
 
-  const leads = await listLeads();
+  const leads = await listBookings();
   const { filtered, stats } = buildView(leads, { q, status, stage });
 
   const hrefWith = (changes: Record<string, string>) => {
@@ -51,7 +52,7 @@ async function LeadsView({ searchParams }: { searchParams: SearchParams }) {
     const merged = { q, status, stage, ...changes };
     for (const [k, v] of Object.entries(merged)) if (v && v !== "all") next.set(k, v);
     const s = next.toString();
-    return s ? `/dashboard/leads?${s}` : "/dashboard/leads";
+    return s ? `/dashboard/calls/bookings?${s}` : "/dashboard/calls/bookings";
   };
 
   return (
@@ -70,21 +71,21 @@ async function LeadsView({ searchParams }: { searchParams: SearchParams }) {
     >
       <Section
         wide
-        label={`${filtered.length} ${filtered.length === 1 ? "lead" : "leads"}`}
+        label={`${filtered.length} ${filtered.length === 1 ? "booking" : "bookings"}`}
         aside={
-          <form action="/dashboard/leads" className="flex flex-wrap gap-2">
+          <form action="/dashboard/calls/bookings" className="flex flex-wrap gap-2">
             {status !== "all" && <input type="hidden" name="status" value={status} />}
             <input
               type="search"
               name="q"
               defaultValue={q}
               placeholder="Search name, email, business…"
-              aria-label="Search leads"
+              aria-label="Search bookings"
               className="input input-sm min-w-0 flex-1 sm:w-64 sm:flex-none"
             />
             <select name="stage" defaultValue={stage} aria-label="Filter by stage" className="input input-sm">
               <option value="all">All stages</option>
-              {LEAD_STAGES.map((s) => (
+              {STAGES.map((s) => (
                 <option key={s} value={s}>
                   {STAGE_LABELS[s]}
                 </option>
@@ -115,7 +116,7 @@ async function LeadsView({ searchParams }: { searchParams: SearchParams }) {
 }
 
 /** Filters and summarises leads. Kept outside the component because it reads the clock. */
-function buildView(leads: Lead[], filters: { q: string; status: string; stage: string }) {
+function buildView(leads: Booking[], filters: { q: string; status: string; stage: string }) {
   const { q, status, stage } = filters;
   const now = Date.now();
   const withStatus = leads.map((lead) => ({ lead, status: callStatus(lead, now) }));
@@ -124,7 +125,7 @@ function buildView(leads: Lead[], filters: { q: string; status: string; stage: s
     if (status === "cancelled" ? s !== "cancelled" && s !== "rejected" : status !== "all" && s !== status) {
       return false;
     }
-    if (stage !== "all" && lead.stage !== stage) return false;
+    if (stage !== "all" && bookingStage(lead) !== stage) return false;
     if (!q) return true;
     const haystack = [
       lead.name,
@@ -150,7 +151,7 @@ function buildView(leads: Lead[], filters: { q: string; status: string; stage: s
     { label: "Total", value: leads.length },
     { label: "Upcoming", value: withStatus.filter((l) => l.status === "upcoming").length },
     { label: "Last 7 days", value: leads.filter((l) => Date.parse(l.bookedAt) > weekAgo).length },
-    { label: "Won", value: leads.filter((l) => l.stage === "won").length },
+    { label: "Won", value: leads.filter((l) => WON_STAGES.includes(bookingStage(l))).length },
   ];
 
   return { filtered, stats };
@@ -160,7 +161,7 @@ function buildView(leads: Lead[], filters: { q: string; status: string; stage: s
 const STICKY = "sticky left-0 z-10 bg-bg pl-0 shadow-[1px_0_0_0_var(--line)]";
 const STICKY_BODY = `${STICKY} group-hover:bg-panel`;
 
-type Row = { lead: Lead; status: CallStatus };
+type Row = { lead: Booking; status: CallStatus };
 
 /** Table columns: every Cal.com form answer, in the order the form asks them, then the call. */
 const COLUMNS: { label: string; cell: (row: Row) => ReactNode; className?: string }[] = [
@@ -169,7 +170,7 @@ const COLUMNS: { label: string; cell: (row: Row) => ReactNode; className?: strin
     className: `${STICKY_BODY} whitespace-nowrap`,
     cell: ({ lead }) => (
       <Link
-        href={`/dashboard/leads/${lead.id}`}
+        href={`/dashboard/calls/bookings/${lead.id}`}
         className="link font-medium no-underline hover:underline"
       >
         {lead.name}
@@ -220,19 +221,25 @@ const COLUMNS: { label: string; cell: (row: Row) => ReactNode; className?: strin
     label: "Value",
     className: "whitespace-nowrap tabular-nums",
     cell: ({ lead }) => {
-      const value = leadValue(lead);
+      const value = bookingValue(lead);
       if (value == null) return <None />;
+      const closed = lead.lead?.closedPrice != null;
       return (
-        <span title={lead.dealValue != null ? "Deal value" : "Estimated from their investment range"}>
+        <span title={closed ? "Closed price" : "Estimate"}>
           {formatMoney(value)}
-          {lead.dealValue == null && <span className="text-hint"> est.</span>}
+          {!closed && <span className="text-hint"> est.</span>}
         </span>
       );
     },
   },
   {
     label: "Stage",
-    cell: ({ lead }) => <StageSelect compact stage={lead.stage} action={updateStage.bind(null, lead.id)} />,
+    cell: ({ lead }) =>
+      lead.lead ? (
+        <StageSelect compact stage={lead.lead.stage} action={updateLeadStage.bind(null, lead.lead.id)} />
+      ) : (
+        <None />
+      ),
   },
 ];
 
@@ -294,7 +301,7 @@ function Website({ url }: { url: string | null }) {
 function EmptyState({ hasLeads }: { hasLeads: boolean }) {
   return (
     <div className="callout">
-      <strong>{hasLeads ? "No leads match these filters." : "No leads yet."}</strong>{" "}
+      <strong>{hasLeads ? "No bookings match these filters." : "No bookings yet."}</strong>{" "}
       {hasLeads
         ? "Try clearing the search or picking a different tab."
         : "New bookings appear here as soon as Cal.com sends the webhook."}

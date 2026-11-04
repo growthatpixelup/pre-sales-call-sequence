@@ -4,13 +4,13 @@ import { EMAIL_STEPS, STEP_LABELS } from "@/lib/emails/schedule";
 import { emailSetupProblems } from "@/lib/emails/sender";
 import { defaultEmailSettings, linkedInMessage } from "@/lib/emails/templates";
 import { callStatus, formatDateTime } from "@/lib/format";
-import type { Lead } from "@/lib/leads/types";
+import type { Booking } from "@/lib/bookings/types";
 import { cancelEmail, markLinkedInSent, saveEmailSettings, scheduleEmails, sendEmailNow } from "../actions";
 import { EmailStatusBadge } from "./badges";
 import { CopyButton } from "./copy-button";
 import { Callout, Section, Tag } from "./ui";
 
-export async function LeadEmails({ lead }: { lead: Lead }) {
+export async function LeadEmails({ lead }: { lead: Booking }) {
   const emails = await listLeadEmails(lead.id);
   const problems = emailSetupProblems();
   const testTo = process.env.EMAIL_TEST_TO;
@@ -79,11 +79,11 @@ export async function LeadEmails({ lead }: { lead: Lead }) {
                 </div>
                 <div className="item-actions">
                   {manual && upcoming && status !== "sent" && status !== "sending" ? (
-                    <Link href={`/dashboard/leads/${lead.id}/emails/${step}`} className="action">
+                    <Link href={`/dashboard/calls/bookings/${lead.id}/emails/${step}`} className="action">
                       Personalise &amp; send
                     </Link>
                   ) : (
-                    <Link href={`/dashboard/leads/${lead.id}/emails/${step}`} className="action">
+                    <Link href={`/dashboard/calls/bookings/${lead.id}/emails/${step}`} className="action">
                       Preview
                     </Link>
                   )}
@@ -111,7 +111,7 @@ export async function LeadEmails({ lead }: { lead: Lead }) {
   );
 }
 
-export function EmailPersonalisation({ lead }: { lead: Lead }) {
+export function EmailPersonalisation({ lead }: { lead: Booking }) {
   const defaults = defaultEmailSettings();
   const settings = { ...defaults, ...lead.emailSettings };
 
@@ -133,7 +133,7 @@ export function EmailPersonalisation({ lead }: { lead: Lead }) {
   );
 }
 
-export function LinkedInNote({ lead }: { lead: Lead }) {
+export function LinkedInNote({ lead }: { lead: Booking }) {
   const message = linkedInMessage(lead);
   const outcome = [...lead.events].reverse().find((e) => e.type === "linkedin_sent" || e.type === "linkedin_skipped");
   return (

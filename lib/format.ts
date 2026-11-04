@@ -1,4 +1,4 @@
-import type { Lead } from "@/lib/leads/types";
+import type { Booking } from "@/lib/bookings/types";
 
 /** Time zone the dashboard shows times in. Falls back to the server's own time zone. */
 const TIME_ZONE = process.env.DASHBOARD_TIMEZONE || undefined;
@@ -33,7 +33,7 @@ export function formatDate(iso: string) {
 
 export type CallStatus = "upcoming" | "past" | "pending" | "cancelled" | "rejected";
 
-export function callStatus(lead: Lead, now = Date.now()): CallStatus {
+export function callStatus(lead: Booking, now = Date.now()): CallStatus {
   if (lead.bookingStatus === "cancelled" || lead.bookingStatus === "rejected") {
     return lead.bookingStatus;
   }
@@ -48,4 +48,9 @@ const EVENT_LABELS: Record<string, string> = {
 
 export function humaniseEvent(type: string) {
   return EVENT_LABELS[type] ?? type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+/** A calendar day ("YYYY-MM-DD"), e.g. a next-action due date. Read at midday UTC so it never shifts a day. */
+export function formatYmd(ymd: string) {
+  return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${ymd}T12:00:00Z`));
 }

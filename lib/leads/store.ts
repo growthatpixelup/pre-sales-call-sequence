@@ -1,319 +1,313 @@
 import "server-only";
 
-import { formatDateTime } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
-import { bookingToLeadFields } from "./fields";
-import { isInternal } from "./internal";
-import type { BookingInput, BookingStatus, EmailSettings, Lead, LeadEvent, LeadStage } from "./types";
+import { companyDomain, normaliseEmail, normaliseLinkedIn, pickMatch, type MatchedOn, type Signal } from "./dedup";
+import {
+  EXIT_STAGES,
+  STAGE_LABELS,
+  type DealType,
+  type IcpFit,
+  type Lead,
+  type LeadActivity,
+  type Origin,
+  type Stage,
+} from "./types";
 
-/**
- * Lead storage backed by Supabase (tables `leads` and `lead_events`, see supabase/schema.sql).
- */
+/** Lead storage: tables `leads` and `lead_activity` (supabase/migrations/009_gtm_leads.sql). */
 
 interface LeadRow {
   id: string;
-  name: string;
-  email: string;
-  business_name: string | null;
-  business_website: string | null;
-  problem: string | null;
-  booking_reason: string | null;
-  capital_raised: string | null;
-  investment_range: string | null;
-  referral_source: string | null;
-  extra_fields: Lead["extraFields"];
-  // Old booking form; never written for new bookings.
-  phone: string | null;
-  topic: string | null;
-  notes: string | null;
-  budget: string | null;
-  twitter: string | null;
-  start_time: string;
-  end_time: string;
-  time_zone: string | null;
-  event_title: string | null;
-  event_slug: string | null;
-  event_type_id: number | null;
-  email_settings: EmailSettings | null;
-  meeting_url: string | null;
-  booking_status: BookingStatus;
-  cancellation_reason: string | null;
-  booked_at: string;
-  stage: LeadStage;
+  contact_name: string;
+  company: string | null;
+  role: string | null;
+  email: string | null;
+  linkedin_url: string | null;
+  domain: string | null;
+  funding_stage: string | null;
+  icp_fit: IcpFit | null;
+  origin: Origin;
+  origin_detail: string | null;
+  booking_source: string | null;
+  owner: string | null;
+  stage: Stage;
   stage_changed_at: string | null;
-  deal_value: number | string | null;
-  internal_notes: string;
-  source: Lead["source"];
+  exit_reason: string | null;
+  deal_type: DealType;
+  parent_lead_id: string | null;
+  estimated_price: number | string | null;
+  closed_price: number | string | null;
+  next_action: string | null;
+  next_action_due: string | null;
+  last_touch_at: string | null;
+  proposal_url: string | null;
+  transcript_url: string | null;
+  notes: string;
   created_at: string;
   updated_at: string;
 }
 
-interface EventRow {
-  type: string;
-  detail: string | null;
-  at: string;
-}
+// Postgres numerics can arrive as strings.
+const num = (v: number | string | null) => (v == null ? null : Number(v));
 
-function fromRow(row: LeadRow, events: EventRow[] = []): Lead {
+function fromRow(r: LeadRow): Lead {
   return {
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    businessName: row.business_name,
-    businessWebsite: row.business_website,
-    problem: row.problem,
-    bookingReason: row.booking_reason,
-    capitalRaised: row.capital_raised,
-    investmentRange: row.investment_range,
-    referralSource: row.referral_source,
-    extraFields: row.extra_fields ?? [],
-    legacy: {
-      phone: row.phone,
-      topic: row.topic,
-      notes: row.notes,
-      budget: row.budget,
-      twitter: row.twitter,
-    },
-    startTime: row.start_time,
-    endTime: row.end_time,
-    timeZone: row.time_zone,
-    eventTitle: row.event_title,
-    eventSlug: row.event_slug,
-    eventTypeId: row.event_type_id,
-    meetingUrl: row.meeting_url,
-    bookingStatus: row.booking_status,
-    cancellationReason: row.cancellation_reason,
-    // Leads saved before migration 005 have no booked_at.
-    bookedAt: row.booked_at ?? row.created_at,
-    stage: row.stage,
-    stageChangedAt: row.stage_changed_at,
-    // Postgres numerics can arrive as strings.
-    dealValue: row.deal_value == null ? null : Number(row.deal_value),
-    internalNotes: row.internal_notes,
-    emailSettings: row.email_settings ?? {},
-    events: events.map((e): LeadEvent => ({ type: e.type, at: e.at, ...(e.detail ? { detail: e.detail } : {}) })),
-    source: row.source,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: r.id,
+    contactName: r.contact_name,
+    company: r.company,
+    role: r.role,
+    email: r.email,
+    linkedinUrl: r.linkedin_url,
+    domain: r.domain,
+    fundingStage: r.funding_stage,
+    icpFit: r.icp_fit,
+    origin: r.origin,
+    originDetail: r.origin_detail,
+    bookingSource: r.booking_source,
+    owner: r.owner,
+    stage: r.stage,
+    stageChangedAt: r.stage_changed_at,
+    exitReason: r.exit_reason,
+    dealType: r.deal_type,
+    parentLeadId: r.parent_lead_id,
+    estimatedPrice: num(r.estimated_price),
+    closedPrice: num(r.closed_price),
+    nextAction: r.next_action,
+    nextActionDue: r.next_action_due,
+    lastTouchAt: r.last_touch_at,
+    proposalUrl: r.proposal_url,
+    transcriptUrl: r.transcript_url,
+    notes: r.notes,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   };
 }
 
-/** Columns that come from Cal.com and are refreshed on every booking update. */
-function calColumns(booking: BookingInput) {
-  const f = bookingToLeadFields(booking);
-  return {
-    name: f.name,
-    email: f.email,
-    business_name: f.businessName,
-    business_website: f.businessWebsite,
-    problem: f.problem,
-    booking_reason: f.bookingReason,
-    capital_raised: f.capitalRaised,
-    investment_range: f.investmentRange,
-    referral_source: f.referralSource,
-    extra_fields: f.extraFields,
-    start_time: f.startTime,
-    end_time: f.endTime,
-    time_zone: f.timeZone,
-    event_title: f.eventTitle,
-    event_slug: f.eventSlug,
-    // Keep a known event type if this payload doesn't carry one.
-    ...(f.eventTypeId != null ? { event_type_id: f.eventTypeId } : {}),
-    meeting_url: f.meetingUrl,
-    booking_status: f.bookingStatus,
-    cancellation_reason: f.cancellationReason,
-  };
+/** Lead fields that can be edited from the dashboard (stage has its own function). */
+export interface LeadFields {
+  contactName: string;
+  company: string | null;
+  role: string | null;
+  email: string | null;
+  linkedinUrl: string | null;
+  fundingStage: string | null;
+  icpFit: IcpFit | null;
+  origin: Origin;
+  originDetail: string | null;
+  bookingSource: string | null;
+  owner: string | null;
+  dealType: DealType;
+  estimatedPrice: number | null;
+  closedPrice: number | null;
+  nextAction: string | null;
+  nextActionDue: string | null;
+  proposalUrl: string | null;
+  transcriptUrl: string | null;
+  notes: string;
+}
+
+function toColumns(f: Partial<LeadFields>, website?: string | null): Partial<LeadRow> {
+  const c: Partial<LeadRow> = {};
+  if (f.contactName !== undefined) c.contact_name = f.contactName;
+  if (f.company !== undefined) c.company = f.company;
+  if (f.role !== undefined) c.role = f.role;
+  if (f.email !== undefined) {
+    c.email = normaliseEmail(f.email) ?? (f.email?.trim() || null);
+    // Keep the domain in step with the email; a website can fill it for free-mail addresses.
+    c.domain = companyDomain(f.email, website);
+  }
+  if (f.linkedinUrl !== undefined) c.linkedin_url = normaliseLinkedIn(f.linkedinUrl) ?? (f.linkedinUrl?.trim() || null);
+  if (f.fundingStage !== undefined) c.funding_stage = f.fundingStage;
+  if (f.icpFit !== undefined) c.icp_fit = f.icpFit;
+  if (f.origin !== undefined) c.origin = f.origin;
+  if (f.originDetail !== undefined) c.origin_detail = f.originDetail;
+  if (f.bookingSource !== undefined) c.booking_source = f.bookingSource;
+  if (f.owner !== undefined) c.owner = f.owner;
+  if (f.dealType !== undefined) c.deal_type = f.dealType;
+  if (f.estimatedPrice !== undefined) c.estimated_price = f.estimatedPrice;
+  if (f.closedPrice !== undefined) c.closed_price = f.closedPrice;
+  if (f.nextAction !== undefined) c.next_action = f.nextAction;
+  if (f.nextActionDue !== undefined) c.next_action_due = f.nextActionDue;
+  if (f.proposalUrl !== undefined) c.proposal_url = f.proposalUrl;
+  if (f.transcriptUrl !== undefined) c.transcript_url = f.transcriptUrl;
+  if (f.notes !== undefined) c.notes = f.notes;
+  return c;
 }
 
 function fail(action: string, error: { message: string }): never {
   throw new Error(`Supabase: could not ${action}: ${error.message}`);
 }
 
-async function addEvent(leadId: string, type: string, detail?: string | null) {
-  const { error } = await supabase()
-    .from("lead_events")
-    .insert({ lead_id: leadId, type, detail: detail ?? null });
-  if (error) fail("record lead event", error);
-}
-
-async function exists(id: string) {
-  return Boolean(await bookedAtOf(id));
-}
-
-/** The lead's booked_at, or null if there's no such lead. */
-async function bookedAtOf(id: string): Promise<string | null> {
-  const { data, error } = await supabase().from("leads").select("booked_at").eq("id", id).maybeSingle();
-  if (error) fail("look up lead", error);
-  return data ? (data.booked_at as string) : null;
-}
-
-/** All leads, latest call first. Our own and test bookings are left out (see ./internal). */
 export async function listLeads(): Promise<Lead[]> {
-  const { data, error } = await supabase()
-    .from("leads")
-    .select("*")
-    .order("start_time", { ascending: false });
+  const { data, error } = await supabase().from("leads").select("*").order("updated_at", { ascending: false });
   if (error) fail("list leads", error);
-  return (data as LeadRow[]).map((row) => fromRow(row)).filter((lead) => !isInternal(lead));
+  return (data as LeadRow[]).map(fromRow);
 }
 
 export async function getLead(id: string): Promise<Lead | null> {
-  const db = supabase();
-  const [lead, events] = await Promise.all([
-    db.from("leads").select("*").eq("id", id).maybeSingle(),
-    db.from("lead_events").select("type, detail, at").eq("lead_id", id).order("at"),
-  ]);
-  if (lead.error) fail("load lead", lead.error);
-  if (events.error) fail("load lead history", events.error);
-  return lead.data ? fromRow(lead.data as LeadRow, events.data as EventRow[]) : null;
+  // Not a uuid: no such lead (and Postgres would reject the query).
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const { data, error } = await supabase().from("leads").select("*").eq("id", id).maybeSingle();
+  if (error) fail("load lead", error);
+  return data ? fromRow(data as LeadRow) : null;
+}
+
+export async function listActivity(leadId: string): Promise<LeadActivity[]> {
+  const { data, error } = await supabase()
+    .from("lead_activity")
+    .select("*")
+    .eq("lead_id", leadId)
+    .order("at", { ascending: false });
+  if (error) fail("load lead activity", error);
+  return (data as { id: number; lead_id: string; type: string; detail: string | null; at: string }[]).map((a) => ({
+    id: a.id,
+    leadId: a.lead_id,
+    type: a.type,
+    detail: a.detail,
+    at: a.at,
+  }));
 }
 
 /**
- * Creates or updates a lead from a Cal.com booking. Dashboard-owned columns (stage, internal
- * notes, history) are never overwritten. Pass `previousId` for a reschedule so the old
- * booking's lead moves to the new booking uid; `previousIds` tries several, newest first.
- * Returns true if a new lead was created.
+ * Adds to the lead's timeline. `touch` marks a two-way contact (a DM, email, call, reply), which
+ * moves "last touch" forward; notes and stage changes don't.
  */
-export async function upsertFromBooking(
-  booking: BookingInput,
-  opts: { source: Lead["source"]; eventType: string; previousId?: string | null; previousIds?: string[] },
-): Promise<boolean> {
-  const db = supabase();
-  const columns: Partial<LeadRow> = calColumns(booking);
-
-  let bookedAt = await bookedAtOf(booking.id);
-
-  const previousIds = [...(opts.previousId ? [opts.previousId] : []), ...(opts.previousIds ?? [])];
-  for (const previousId of previousIds) {
-    if (bookedAt) break;
-    bookedAt = await bookedAtOf(previousId);
-    if (bookedAt) {
-      // lead_events and lead_emails follow via "on update cascade".
-      const { error } = await db.from("leads").update({ id: booking.id }).eq("id", previousId);
-      if (error) fail("move rescheduled lead", error);
-    }
-  }
-
-  // The first booking time wins: a reschedule is a new Cal.com booking with a later createdAt.
-  if (booking.bookedAt && (!bookedAt || Date.parse(booking.bookedAt) < Date.parse(bookedAt))) {
-    columns.booked_at = booking.bookedAt;
-  }
-
-  if (!bookedAt) {
-    const { error } = await db.from("leads").insert({ id: booking.id, ...columns, source: opts.source });
-    if (!error) {
-      await addEvent(booking.id, opts.eventType);
-      return true;
-    }
-    // 23505 = unique violation: a duplicate delivery inserted it first, so update instead.
-    if (error.code !== "23505") fail("save lead", error);
-  }
-
-  const { error } = await db.from("leads").update(columns).eq("id", booking.id);
-  if (error) fail("update lead", error);
-  // Re-importing an existing booking isn't news; webhook updates are.
-  if (opts.source !== "import") await addEvent(booking.id, opts.eventType);
-  return false;
+export async function logActivity(
+  leadId: string,
+  type: string,
+  detail: string | null,
+  opts: { at?: string; touch?: boolean } = {},
+): Promise<void> {
+  const at = opts.at ?? new Date().toISOString();
+  const { error } = await supabase().from("lead_activity").insert({ lead_id: leadId, type, detail, at });
+  if (error) fail("log lead activity", error);
+  if (opts.touch) await touchLead(leadId, at);
 }
 
-const RESCHEDULED = "booking_rescheduled";
-
-/** Notes each earlier call a lead moved from (by its start time), once. */
-export async function recordReschedules(leadId: string, previousStarts: string[]): Promise<void> {
-  if (!previousStarts.length) return;
-  const db = supabase();
-  const { data, error } = await db.from("lead_events").select("detail").eq("lead_id", leadId).eq("type", RESCHEDULED);
-  if (error) fail("load lead events", error);
-  const known = new Set((data as { detail: string | null }[]).map((e) => e.detail));
-  for (const start of previousStarts) {
-    const detail = `Moved from a call on ${formatDateTime(start)}`;
-    if (!known.has(detail)) await addEvent(leadId, RESCHEDULED, detail);
-  }
+/** Moves last touch forward to `at` (never back). */
+export async function touchLead(leadId: string, at: string): Promise<void> {
+  const { error } = await supabase()
+    .from("leads")
+    .update({ last_touch_at: at })
+    .eq("id", leadId)
+    .or(`last_touch_at.is.null,last_touch_at.lt."${at}"`);
+  if (error) fail("update last touch", error);
 }
 
-/** How many times each lead's call was rescheduled. */
-export async function rescheduleCounts(): Promise<Map<string, number>> {
-  const { data, error } = await supabase().from("lead_events").select("lead_id").eq("type", RESCHEDULED);
-  if (error) fail("load reschedules", error);
-  const counts = new Map<string, number>();
-  for (const { lead_id } of data as { lead_id: string }[]) counts.set(lead_id, (counts.get(lead_id) ?? 0) + 1);
-  return counts;
-}
-
-export type LinkedInOutcome = "linkedin_sent" | "linkedin_skipped";
-
-/** Records that the LinkedIn connect note was sent (or skipped) for a lead. */
-export async function recordLinkedIn(leadId: string, outcome: LinkedInOutcome): Promise<void> {
-  await addEvent(leadId, outcome);
-}
-
-/** Leads whose LinkedIn note was sent or skipped, with which. */
-export async function linkedInOutcomes(): Promise<Map<string, LinkedInOutcome>> {
+export async function createLead(
+  fields: Partial<LeadFields> & { origin: Origin },
+  opts: { stage?: Stage; website?: string | null; parentLeadId?: string; activity?: string; at?: string } = {},
+): Promise<Lead> {
+  const at = opts.at ?? new Date().toISOString();
+  const stage = opts.stage ?? "engaged";
   const { data, error } = await supabase()
-    .from("lead_events")
-    .select("lead_id, type")
-    .in("type", ["linkedin_sent", "linkedin_skipped"])
-    .order("at");
-  if (error) fail("load LinkedIn notes", error);
-  return new Map((data as { lead_id: string; type: LinkedInOutcome }[]).map((e) => [e.lead_id, e.type]));
+    .from("leads")
+    .insert({
+      ...toColumns({ contactName: "", ...fields }, opts.website),
+      stage,
+      stage_changed_at: at,
+      last_touch_at: at,
+      parent_lead_id: opts.parentLeadId ?? null,
+      created_at: at,
+    })
+    .select("*")
+    .single();
+  if (error) fail("create lead", error);
+  const lead = fromRow(data as LeadRow);
+  await logActivity(lead.id, "created", opts.activity ?? `Added at ${STAGE_LABELS[stage]}`, { at });
+  return lead;
 }
 
-/** Deletes leads (their events and emails go with them; replies are kept, unlinked). */
-export async function removeLeads(ids: string[]): Promise<void> {
-  if (!ids.length) return;
-  const { error } = await supabase().from("leads").delete().in("id", ids);
-  if (error) fail("remove leads", error);
+export async function updateLead(id: string, fields: Partial<LeadFields>): Promise<void> {
+  const columns = toColumns(fields);
+  if (!Object.keys(columns).length) return;
+  const { error } = await supabase().from("leads").update(columns).eq("id", id);
+  if (error) fail("update lead", error);
 }
 
-/** Returns false if no lead with this id exists. */
-export async function setBookingStatus(
-  id: string,
-  status: BookingStatus,
-  eventType: string,
-  detail?: string | null,
-): Promise<boolean> {
-  const changes: Partial<LeadRow> = { booking_status: status };
-  if (status === "cancelled" || status === "rejected") changes.cancellation_reason = detail ?? null;
+export class StageError extends Error {}
 
-  const { data, error } = await supabase().from("leads").update(changes).eq("id", id).select("id");
-  if (error) fail("update booking status", error);
-  if (!data?.length) return false;
-  await addEvent(id, eventType, detail);
+/** Moves a lead to a stage. Lost and nurture need a reason. Returns false if nothing changed. */
+export async function setStage(id: string, stage: Stage, opts: { reason?: string | null; by?: string } = {}) {
+  const reason = opts.reason?.trim() || null;
+  if (EXIT_STAGES.includes(stage) && !reason) throw new StageError(`Moving to ${STAGE_LABELS[stage]} needs a reason.`);
+
+  const lead = await getLead(id);
+  if (!lead) throw new StageError("Lead not found.");
+  if (lead.stage === stage && (!reason || reason === lead.exitReason)) return false;
+
+  const { error } = await supabase()
+    .from("leads")
+    .update({
+      stage,
+      stage_changed_at: new Date().toISOString(),
+      // The reason belongs to the exit; clear it when the deal comes back.
+      exit_reason: EXIT_STAGES.includes(stage) ? reason : null,
+    })
+    .eq("id", id);
+  if (error) fail("update stage", error);
+
+  const detail = `${STAGE_LABELS[lead.stage]} → ${STAGE_LABELS[stage]}${reason ? `: ${reason}` : ""}${opts.by ? ` (${opts.by})` : ""}`;
+  await logActivity(id, "stage_changed", detail);
   return true;
 }
 
-export async function addLeadEvent(id: string, type: string, detail?: string): Promise<void> {
-  if (await exists(id)) await addEvent(id, type, detail);
+/**
+ * The lead a new signal belongs to, if any. Won and paid leads don't take new signals: a new
+ * conversation after a win is a new deal.
+ */
+export async function findMatchingLead(signal: Signal): Promise<{ lead: Lead; on: MatchedOn } | null> {
+  const email = normaliseEmail(signal.email);
+  const linkedin = normaliseLinkedIn(signal.linkedinUrl);
+  const domain = signal.domain?.toLowerCase() || null;
+  const filters = [
+    // ilike without wildcards is a case-insensitive equals; pickMatch re-checks exactly.
+    email ? `email.ilike."${email.replace(/"/g, "")}"` : null,
+    linkedin ? `linkedin_url.eq."${linkedin.replace(/"/g, "")}"` : null,
+    domain ? `domain.eq."${domain.replace(/"/g, "")}"` : null,
+  ].filter(Boolean);
+  if (!filters.length) return null;
+
+  const { data, error } = await supabase()
+    .from("leads")
+    .select("*")
+    .not("stage", "in", "(won,paid)")
+    .or(filters.join(","));
+  if (error) fail("look up matching leads", error);
+  const match = pickMatch({ email, linkedinUrl: linkedin, domain }, (data as LeadRow[]).map(fromRow));
+  return match;
 }
 
-export async function updateEmailSettings(id: string, settings: EmailSettings): Promise<void> {
-  const { error } = await supabase().from("leads").update({ email_settings: settings }).eq("id", id);
-  if (error) fail("save email settings", error);
+/** Creates the Project deal that follows a paid audit, linked back to it. */
+export async function spawnProjectDeal(auditId: string): Promise<Lead> {
+  const audit = await getLead(auditId);
+  if (!audit) throw new StageError("Lead not found.");
+  if (audit.dealType !== "audit") throw new StageError("Only audit deals spawn a project deal.");
+  const project = await createLead(
+    {
+      contactName: audit.contactName,
+      company: audit.company,
+      role: audit.role,
+      email: audit.email,
+      linkedinUrl: audit.linkedinUrl,
+      fundingStage: audit.fundingStage,
+      icpFit: audit.icpFit,
+      // Credit the channel that brought the audit in.
+      origin: audit.origin,
+      originDetail: audit.originDetail,
+      bookingSource: audit.bookingSource,
+      owner: audit.owner,
+      dealType: "project",
+    },
+    // The audit's domain stands in for a website, for free-mail addresses.
+    { stage: "engaged", parentLeadId: audit.id, website: audit.domain, activity: "Project deal after the audit" },
+  );
+  await logActivity(audit.id, "project_spawned", project.id);
+  return project;
 }
 
-export async function updateLeadTracking(
-  id: string,
-  changes: { stage?: LeadStage; internalNotes?: string; dealValue?: number | null },
-): Promise<void> {
-  const db = supabase();
-  const update: Partial<LeadRow> = {};
-  let previousStage: LeadStage | null = null;
-
-  if (changes.stage) {
-    const { data, error } = await db.from("leads").select("stage").eq("id", id).maybeSingle();
-    if (error) fail("load lead", error);
-    if (!data) return;
-    if (data.stage !== changes.stage) {
-      update.stage = changes.stage;
-      update.stage_changed_at = new Date().toISOString();
-      previousStage = data.stage as LeadStage;
-    }
-  }
-  if (changes.internalNotes !== undefined) update.internal_notes = changes.internalNotes;
-  if (changes.dealValue !== undefined) update.deal_value = changes.dealValue;
-  if (!Object.keys(update).length) return;
-
-  const { error } = await db.from("leads").update(update).eq("id", id);
-  if (error) fail("update lead", error);
-  if (previousStage) await addEvent(id, "stage_changed", `${previousStage} → ${changes.stage}`);
+/** Project deals spawned from this audit. */
+export async function childLeads(parentId: string): Promise<Lead[]> {
+  const { data, error } = await supabase().from("leads").select("*").eq("parent_lead_id", parentId);
+  if (error) fail("load project deals", error);
+  return (data as LeadRow[]).map(fromRow);
 }

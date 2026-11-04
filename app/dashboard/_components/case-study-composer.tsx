@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { emailConfig } from "@/lib/emails/config";
 import { renderEmail } from "@/lib/emails/templates";
-import type { EmailSettings, Lead } from "@/lib/leads/types";
+import type { EmailSettings, Booking } from "@/lib/bookings/types";
 import { Icon, Rows, Section } from "./ui";
 
 type Action = (formData: FormData) => void | Promise<void>;
@@ -17,7 +17,7 @@ export function CaseStudyComposer({
   sendAction,
   to,
 }: {
-  lead: Lead;
+  lead: Booking;
   initial: Required<Pick<EmailSettings, "caseStudyId" | "companyLine" | "question">>;
   saveAction: Action;
   sendAction: Action;

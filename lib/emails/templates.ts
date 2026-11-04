@@ -1,4 +1,4 @@
-import type { EmailSettings, Lead } from "@/lib/leads/types";
+import type { EmailSettings, Booking } from "@/lib/bookings/types";
 import { emailConfig } from "./config";
 import { isDayBefore, type EmailStep } from "./schedule";
 import { formatDayDate, formatTime, formatWeekday, formatZoneShort, safeTimeZone } from "./time";
@@ -27,7 +27,7 @@ export interface RenderedEmail {
 
 const link = (href: string, text?: string): Inline => ({ href, text });
 
-function firstName(lead: Lead) {
+function firstName(lead: Booking) {
   return lead.name.trim().split(/\s+/)[0] || "there";
 }
 
@@ -38,7 +38,7 @@ const PERSONAL_DOMAINS = new Set([
 ]);
 
 /** Business name from the booking form, else the name from their email domain ("acme.io" → "Acme"). */
-function companyName(lead: Lead) {
+function companyName(lead: Booking) {
   if (lead.businessName?.trim()) return lead.businessName.trim();
   const label = lead.email.split("@")[1]?.toLowerCase().split(".")[0];
   if (!label || PERSONAL_DOMAINS.has(label)) return "your company";
@@ -51,15 +51,15 @@ function signature(closing?: string, { withCompany = false } = {}): Block {
   return { p: [closing ? `${closing}\n${name}` : name] };
 }
 
-function callLink(lead: Lead): Inline {
+function callLink(lead: Booking): Inline {
   return lead.meetingUrl ? link(lead.meetingUrl) : "the link in your calendar invite";
 }
 
-function rescheduleLink(lead: Lead) {
+function rescheduleLink(lead: Booking) {
   return `https://app.cal.com/reschedule/${encodeURIComponent(lead.id)}`;
 }
 
-function caseStudy(lead: Lead) {
+function caseStudy(lead: Booking) {
   const { caseStudies } = emailConfig;
   return caseStudies.find((c) => c.id === lead.emailSettings.caseStudyId) ?? caseStudies[0];
 }
@@ -74,20 +74,20 @@ export function defaultEmailSettings(): Required<EmailSettings> {
   };
 }
 
-const teamLine = (lead: Lead) => lead.emailSettings.team || defaultEmailSettings().team;
+const teamLine = (lead: Booking) => lead.emailSettings.team || defaultEmailSettings().team;
 
-function discoveryQuestion(lead: Lead) {
+function discoveryQuestion(lead: Booking) {
   const question = lead.emailSettings.question || defaultEmailSettings().question;
   return question.replaceAll("{company}", companyName(lead));
 }
 
 /** The LinkedIn connect note from the sequence (sent by hand, same day as booking). */
-export function linkedInMessage(lead: Lead) {
+export function linkedInMessage(lead: Booking) {
   const day = formatWeekday(new Date(lead.startTime), safeTimeZone(lead.timeZone));
   return `Hey ${firstName(lead)}, excited for our chat on ${day}. Figured I'd connect here too.`;
 }
 
-const TEMPLATES: Record<EmailStep, (lead: Lead, ctx: EmailContext) => { subject: string; blocks: Block[] }> = {
+const TEMPLATES: Record<EmailStep, (lead: Booking, ctx: EmailContext) => { subject: string; blocks: Block[] }> = {
   confirmation(lead) {
     const tz = safeTimeZone(lead.timeZone);
     const start = new Date(lead.startTime);
@@ -232,7 +232,7 @@ function inlineText(parts: Inline[]) {
     .join("");
 }
 
-export function renderEmail(step: EmailStep, lead: Lead, ctx: EmailContext): RenderedEmail {
+export function renderEmail(step: EmailStep, lead: Booking, ctx: EmailContext): RenderedEmail {
   const { subject, blocks } = TEMPLATES[step](lead, ctx);
 
   const html = blocks

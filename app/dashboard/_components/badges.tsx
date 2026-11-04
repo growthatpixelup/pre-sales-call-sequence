@@ -1,6 +1,6 @@
 import type { EmailStatus } from "@/lib/emails/queue";
 import type { CallStatus } from "@/lib/format";
-import type { LeadStage } from "@/lib/leads/types";
+import { STAGE_LABELS, type Stage } from "@/lib/leads/types";
 import { Tag, type Tone } from "./ui";
 
 // One accent: blue marks what needs attention or is live, grey what's settled, dim what's off.
@@ -12,26 +12,19 @@ const CALL_STATUS_STYLES: Record<CallStatus, { label: string; tone: Tone }> = {
   rejected: { label: "Rejected", tone: "muted" },
 };
 
-export const STAGE_LABELS: Record<LeadStage, string> = {
-  new: "New",
-  contacted: "Contacted",
-  qualified: "Qualified",
-  proposal: "Proposal sent",
-  payment: "Payment processing",
-  won: "Won",
-  lost: "Lost",
-  closed: "Closed",
-};
+export { STAGE_LABELS };
 
-const STAGE_TONES: Record<LeadStage, Tone> = {
-  new: "accent",
-  contacted: "accent",
-  qualified: "accent",
-  proposal: "accent",
-  payment: "accent",
-  won: "neutral",
+const STAGE_TONES: Record<Stage, Tone> = {
+  engaged: "accent",
+  call_booked: "accent",
+  call_held: "accent",
+  no_show: "accent",
+  proposal_sent: "accent",
+  negotiating: "accent",
+  won: "accent",
+  paid: "neutral",
   lost: "muted",
-  closed: "muted",
+  nurture: "muted",
 };
 
 const EMAIL_STATUS_STYLES: Record<EmailStatus, { label: string; tone: Tone }> = {
@@ -55,6 +48,6 @@ export function CallStatusBadge({ status }: { status: CallStatus }) {
   return <Tag tone={s.tone}>{s.label}</Tag>;
 }
 
-export function StageBadge({ stage }: { stage: LeadStage }) {
+export function StageBadge({ stage }: { stage: Stage }) {
   return <Tag tone={STAGE_TONES[stage]}>{STAGE_LABELS[stage]}</Tag>;
 }

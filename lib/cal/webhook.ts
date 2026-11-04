@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { BookingInput, BookingStatus, RawField } from "@/lib/leads/types";
+import type { BookingInput, BookingStatus, RawField } from "@/lib/bookings/types";
 
 /** Checks the `x-cal-signature-256` header: a hex HMAC-SHA256 of the raw body. */
 export function verifyCalSignature(rawBody: string, signature: string | null, secret: string) {

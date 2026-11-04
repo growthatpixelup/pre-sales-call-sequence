@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Lead } from "@/lib/leads/types";
+import type { Booking } from "@/lib/bookings/types";
 import { supabase } from "@/lib/supabase";
 import type { EmailStep, PlannedEmail } from "./schedule";
 
@@ -10,7 +10,7 @@ export type EmailStatus = "draft" | "scheduled" | "sending" | "sent" | "skipped"
 
 export interface LeadEmail {
   id: string;
-  leadId: string;
+  bookingId: string;
   step: EmailStep;
   status: EmailStatus;
   dueAt: string | null;
@@ -23,7 +23,7 @@ export interface LeadEmail {
 
 interface Row {
   id: string;
-  lead_id: string;
+  booking_id: string;
   step: EmailStep;
   status: EmailStatus;
   due_at: string | null;
@@ -39,7 +39,7 @@ const MAX_ATTEMPTS = 3;
 function fromRow(r: Row): LeadEmail {
   return {
     id: r.id,
-    leadId: r.lead_id,
+    bookingId: r.booking_id,
     step: r.step,
     status: r.status,
     dueAt: r.due_at,
@@ -58,8 +58,8 @@ function fail(action: string, error: { message: string }): never {
 /** Sent or in-flight emails are never touched again. */
 const isFinal = (status: EmailStatus) => status === "sent" || status === "sending";
 
-export async function listLeadEmails(leadId: string): Promise<LeadEmail[]> {
-  const { data, error } = await supabase().from("lead_emails").select("*").eq("lead_id", leadId);
+export async function listLeadEmails(bookingId: string): Promise<LeadEmail[]> {
+  const { data, error } = await supabase().from("lead_emails").select("*").eq("booking_id", bookingId);
   if (error) fail("load emails", error);
   return (data as Row[]).map(fromRow);
 }
@@ -68,7 +68,7 @@ export async function listLeadEmails(leadId: string): Promise<LeadEmail[]> {
  * Writes a plan for a lead, leaving emails that were already sent alone. Steps in `resend` that
  * already went out are sent again if the plan has a time for them (after a reschedule).
  */
-export async function applyPlan(lead: Lead, plan: PlannedEmail[], resend: EmailStep[] = []): Promise<void> {
+export async function applyPlan(lead: Booking, plan: PlannedEmail[], resend: EmailStep[] = []): Promise<void> {
   const existing = await listLeadEmails(lead.id);
   const keep = (p: PlannedEmail) =>
     existing.some(
@@ -79,7 +79,7 @@ export async function applyPlan(lead: Lead, plan: PlannedEmail[], resend: EmailS
   const rows = plan
     .filter((p) => !keep(p))
     .map((p) => ({
-      lead_id: lead.id,
+      booking_id: lead.id,
       step: p.step,
       status: p.draft ? "draft" : p.dueAt ? "scheduled" : "skipped",
       due_at: p.dueAt?.toISOString() ?? null,
@@ -87,30 +87,30 @@ export async function applyPlan(lead: Lead, plan: PlannedEmail[], resend: EmailS
       attempts: 0,
     }));
   if (!rows.length) return;
-  const { error } = await supabase().from("lead_emails").upsert(rows, { onConflict: "lead_id,step" });
+  const { error } = await supabase().from("lead_emails").upsert(rows, { onConflict: "booking_id,step" });
   if (error) fail("schedule emails", error);
 }
 
 /** Queues one email to go out on the next run (used for the no-show nudge and "Send now"). */
-export async function queueNow(leadId: string, step: EmailStep, note: string | null = null) {
-  const existing = (await listLeadEmails(leadId)).find((e) => e.step === step);
+export async function queueNow(bookingId: string, step: EmailStep, note: string | null = null) {
+  const existing = (await listLeadEmails(bookingId)).find((e) => e.step === step);
   if (existing && isFinal(existing.status)) return false;
   const { error } = await supabase()
     .from("lead_emails")
     .upsert(
-      { lead_id: leadId, step, status: "scheduled", due_at: new Date().toISOString(), note, attempts: 0 },
-      { onConflict: "lead_id,step" },
+      { booking_id: bookingId, step, status: "scheduled", due_at: new Date().toISOString(), note, attempts: 0 },
+      { onConflict: "booking_id,step" },
     );
   if (error) fail("queue email", error);
   return true;
 }
 
 /** Cancels emails that haven't gone out yet, drafts included. */
-export async function cancelPending(leadId: string, reason: string, steps?: EmailStep[]) {
+export async function cancelPending(bookingId: string, reason: string, steps?: EmailStep[]) {
   let query = supabase()
     .from("lead_emails")
     .update({ status: "cancelled", note: reason })
-    .eq("lead_id", leadId)
+    .eq("booking_id", bookingId)
     .in("status", ["scheduled", "draft"]);
   if (steps) query = query.in("step", steps);
   const { error } = await query;
@@ -121,10 +121,10 @@ export async function cancelPending(leadId: string, reason: string, steps?: Emai
 export async function listOpenDrafts(): Promise<LeadEmail[]> {
   const { data, error } = await supabase()
     .from("lead_emails")
-    .select("*, leads!inner(start_time, booking_status)")
+    .select("*, bookings!inner(start_time, booking_status)")
     .eq("status", "draft")
-    .eq("leads.booking_status", "accepted")
-    .gt("leads.start_time", new Date().toISOString())
+    .eq("bookings.booking_status", "accepted")
+    .gt("bookings.start_time", new Date().toISOString())
     .order("due_at");
   if (error) fail("load drafts", error);
   return (data as Row[]).map(fromRow);
@@ -152,12 +152,12 @@ export async function listEmailActivity(since: Date): Promise<LeadEmail[]> {
 }
 
 /** Of these leads, the ones with no emails planned at all. */
-export async function leadsWithoutEmails(leadIds: string[]): Promise<Set<string>> {
-  if (!leadIds.length) return new Set();
-  const { data, error } = await supabase().from("lead_emails").select("lead_id").in("lead_id", leadIds);
+export async function leadsWithoutEmails(bookingIds: string[]): Promise<Set<string>> {
+  if (!bookingIds.length) return new Set();
+  const { data, error } = await supabase().from("lead_emails").select("booking_id").in("booking_id", bookingIds);
   if (error) fail("load lead emails", error);
-  const planned = new Set((data as { lead_id: string }[]).map((r) => r.lead_id));
-  return new Set(leadIds.filter((id) => !planned.has(id)));
+  const planned = new Set((data as { booking_id: string }[]).map((r) => r.booking_id));
+  return new Set(bookingIds.filter((id) => !planned.has(id)));
 }
 
 /** Drafts nobody sent before the call started are marked skipped. */
@@ -165,9 +165,9 @@ export async function expireDrafts() {
   const db = supabase();
   const { data, error } = await db
     .from("lead_emails")
-    .select("id, leads!inner(start_time)")
+    .select("id, bookings!inner(start_time)")
     .eq("status", "draft")
-    .lte("leads.start_time", new Date().toISOString());
+    .lte("bookings.start_time", new Date().toISOString());
   if (error) fail("load expired drafts", error);
   const ids = (data as { id: string }[]).map((r) => r.id);
   if (!ids.length) return;

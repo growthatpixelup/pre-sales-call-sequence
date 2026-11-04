@@ -1,12 +1,16 @@
 import { bookingFromWebhook, previousBookingUid, verifyCalSignature } from "@/lib/cal/webhook";
 import { cancelSequence, processDueEmails, queueNoShowNudge, scheduleSequence } from "@/lib/emails/sender";
 import { cancelPending } from "@/lib/emails/queue";
-import { addLeadEvent, getLead, setBookingStatus, upsertFromBooking } from "@/lib/leads/store";
+import { addBookingEvent, getBooking, setBookingStatus, upsertFromBooking } from "@/lib/bookings/store";
+import { attachBooking } from "@/lib/leads/from-booking";
 import { notifyCallBooked } from "@/lib/slack";
 
 type Json = Record<string, unknown>;
 
-/** Email and Slack problems are logged, not returned: the lead is already saved and Cal.com shouldn't retry. */
+/**
+ * Email, pipeline and Slack problems are logged, not returned: the booking is already saved and Cal.com
+ * shouldn't retry. "Sync with Cal.com" links any booking left without a lead.
+ */
 async function step(label: string, fn: () => Promise<unknown>) {
   try {
     await fn();
@@ -60,8 +64,9 @@ export async function POST(request: Request) {
       if (created && trigger !== "BOOKING_RESCHEDULED") {
         await step("posting to Slack", () => notifyCallBooked(booking));
       }
+      await step("adding to the pipeline", () => attachBooking(booking.id, { fresh: true }));
       await step("scheduling emails", async () => {
-        const lead = await getLead(booking.id);
+        const lead = await getBooking(booking.id);
         if (!lead) return;
         const rescheduled = trigger === "BOOKING_RESCHEDULED";
         if (rescheduled) await cancelPending(lead.id, "Call was rescheduled", ["no_show"]);
@@ -86,6 +91,7 @@ export async function POST(request: Request) {
           { ...booking, bookingStatus: status },
           { source: "webhook", eventType: trigger.toLowerCase() },
         );
+        await step("adding to the pipeline", () => attachBooking(booking.id, { fresh: false }));
       }
       await step("cancelling emails", () => cancelSequence(booking.id, `Booking was ${status}`));
       break;
@@ -95,8 +101,8 @@ export async function POST(request: Request) {
     // on the webhook in Cal.com).
     case "AFTER_GUESTS_CAL_VIDEO_NO_SHOW": {
       const uid = payload.bookingUid as string | undefined;
-      if (uid && (await getLead(uid))) {
-        await addLeadEvent(uid, "guest_did_not_join");
+      if (uid && (await getBooking(uid))) {
+        await addBookingEvent(uid, "guest_did_not_join");
         await step("queueing no-show email", () => queueNoShowNudge(uid, "Guest hadn't joined Cal Video"));
       }
       break;
@@ -106,8 +112,8 @@ export async function POST(request: Request) {
     case "BOOKING_NO_SHOW_UPDATED": {
       const uid = payload.bookingUid as string | undefined;
       const attendees = (payload.attendees ?? []) as { noShow?: boolean }[];
-      if (uid && (await getLead(uid))) {
-        await addLeadEvent(uid, "booking_no_show_updated", payload.message as string | undefined);
+      if (uid && (await getBooking(uid))) {
+        await addBookingEvent(uid, "booking_no_show_updated", payload.message as string | undefined);
         if (attendees.some((a) => a.noShow)) {
           await step("queueing no-show email", () => queueNoShowNudge(uid, "Marked as no-show in Cal.com"));
         }
@@ -118,7 +124,7 @@ export async function POST(request: Request) {
     default: {
       // Anything else (MEETING_ENDED, ...) is recorded on the lead's history.
       const uid = (payload.uid ?? payload.bookingUid) as string | undefined;
-      if (uid) await addLeadEvent(uid, trigger.toLowerCase());
+      if (uid) await addBookingEvent(uid, trigger.toLowerCase());
     }
   }
 

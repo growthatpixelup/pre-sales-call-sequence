@@ -8,57 +8,44 @@ import { markRepliesRead } from "@/lib/emails/replies";
 import { EMAIL_STEPS, type EmailStep } from "@/lib/emails/schedule";
 import { processDueEmails, scheduleSequence } from "@/lib/emails/sender";
 import { defaultEmailSettings } from "@/lib/emails/templates";
-import { getLead, recordLinkedIn, updateEmailSettings, updateLeadTracking } from "@/lib/leads/store";
-import { LEAD_STAGES, type EmailSettings, type LeadStage } from "@/lib/leads/types";
+import { getBooking, recordLinkedIn, updateEmailSettings } from "@/lib/bookings/store";
+import type { EmailSettings } from "@/lib/bookings/types";
 
 // The dashboard is protected by proxy.ts (DASHBOARD_PASSWORD); server actions are posted to
 // /dashboard routes, so they sit behind the same check.
 
-export async function updateStage(id: string, formData: FormData) {
-  const stage = formData.get("stage");
-  if (typeof stage !== "string" || !LEAD_STAGES.includes(stage as LeadStage)) {
-    throw new Error("Invalid stage");
-  }
-  await updateLeadTracking(id, { stage: stage as LeadStage });
-  refresh();
-}
-
-export async function saveInternalNotes(id: string, formData: FormData) {
-  const notes = formData.get("internalNotes");
-  await updateLeadTracking(id, { internalNotes: typeof notes === "string" ? notes : "" });
-  refresh();
-}
+// Booked-calls actions. Pipeline (lead) actions are in ./leads/actions.ts.
 
 function assertStep(step: string): asserts step is EmailStep {
   if (!EMAIL_STEPS.includes(step as EmailStep)) throw new Error("Invalid email step");
 }
 
 /** Plans the sequence for a lead that doesn't have one yet (e.g. booked before emails existed). */
-export async function scheduleEmails(leadId: string) {
-  const lead = await getLead(leadId);
+export async function scheduleEmails(bookingId: string) {
+  const lead = await getBooking(bookingId);
   if (!lead) throw new Error("Lead not found");
   await scheduleSequence(lead);
   refresh();
 }
 
-export async function sendEmailNow(leadId: string, step: string) {
+export async function sendEmailNow(bookingId: string, step: string) {
   assertStep(step);
-  await queueNow(leadId, step, "Sent from dashboard");
+  await queueNow(bookingId, step, "Sent from dashboard");
   await processDueEmails();
   refresh();
 }
 
-export async function cancelEmail(leadId: string, step: string) {
+export async function cancelEmail(bookingId: string, step: string) {
   assertStep(step);
-  await cancelPending(leadId, "Cancelled from dashboard", [step]);
+  await cancelPending(bookingId, "Cancelled from dashboard", [step]);
   refresh();
 }
 
 const SETTING_KEYS = ["caseStudyId", "companyLine", "question", "team"] as const satisfies (keyof EmailSettings)[];
 
 /** Saves the settings fields present in the form, keeping the lead's other settings. */
-async function storeEmailSettings(leadId: string, formData: FormData) {
-  const lead = await getLead(leadId);
+async function storeEmailSettings(bookingId: string, formData: FormData) {
+  const lead = await getBooking(bookingId);
   if (!lead) throw new Error("Lead not found");
   const settings: EmailSettings = { ...lead.emailSettings };
   // Values equal to the defaults aren't stored, so later config changes still apply.
@@ -70,28 +57,20 @@ async function storeEmailSettings(leadId: string, formData: FormData) {
     if (value && value !== defaults[key]) settings[key] = value;
     else delete settings[key];
   }
-  await updateEmailSettings(leadId, settings);
+  await updateEmailSettings(bookingId, settings);
 }
 
-export async function saveEmailSettings(leadId: string, formData: FormData) {
-  await storeEmailSettings(leadId, formData);
+export async function saveEmailSettings(bookingId: string, formData: FormData) {
+  await storeEmailSettings(bookingId, formData);
   refresh();
 }
 
 /** Saves Email 1's personalisation and sends it. */
-export async function sendCaseStudy(leadId: string, formData: FormData) {
-  await storeEmailSettings(leadId, formData);
-  await queueNow(leadId, "case_study", "Personalised and sent from dashboard");
+export async function sendCaseStudy(bookingId: string, formData: FormData) {
+  await storeEmailSettings(bookingId, formData);
+  await queueNow(bookingId, "case_study", "Personalised and sent from dashboard");
   await processDueEmails();
-  redirect(`/dashboard/leads/${encodeURIComponent(leadId)}`);
-}
-
-export async function saveDealValue(leadId: string, formData: FormData) {
-  const raw = String(formData.get("dealValue") ?? "").replace(/[$,\s]/g, "");
-  const value = raw ? Number(raw) : null;
-  if (value != null && (!Number.isFinite(value) || value < 0)) throw new Error("Invalid deal value");
-  await updateLeadTracking(leadId, { dealValue: value });
-  refresh();
+  redirect(`/dashboard/calls/bookings/${encodeURIComponent(bookingId)}`);
 }
 
 export async function markReplyRead(id: string) {
@@ -99,8 +78,8 @@ export async function markReplyRead(id: string) {
   refresh();
 }
 
-export async function markLeadRepliesRead(leadId: string) {
-  await markRepliesRead({ leadId });
+export async function markLeadRepliesRead(bookingId: string) {
+  await markRepliesRead({ bookingId });
   refresh();
 }
 
@@ -109,13 +88,13 @@ export async function markAllRepliesRead() {
   refresh();
 }
 
-export async function markLinkedInSent(leadId: string) {
-  await recordLinkedIn(leadId, "linkedin_sent");
+export async function markLinkedInSent(bookingId: string) {
+  await recordLinkedIn(bookingId, "linkedin_sent");
   refresh();
 }
 
-export async function skipLinkedIn(leadId: string) {
-  await recordLinkedIn(leadId, "linkedin_skipped");
+export async function skipLinkedIn(bookingId: string) {
+  await recordLinkedIn(bookingId, "linkedin_skipped");
   refresh();
 }
 
@@ -127,7 +106,7 @@ export async function syncFromCal(): Promise<SyncState> {
     const { saved, added } = await syncBookingsFromCal();
     // New leads get the sequence the webhook would have planned; past calls skip every step.
     for (const id of added) {
-      const lead = await getLead(id);
+      const lead = await getBooking(id);
       if (lead) await scheduleSequence(lead);
     }
     if (added.length) await processDueEmails();

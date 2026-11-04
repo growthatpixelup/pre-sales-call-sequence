@@ -1,8 +1,8 @@
 import "server-only";
 
 import { leadsWithoutEmails, listEmailActivity, type LeadEmail } from "@/lib/emails/queue";
-import { linkedInOutcomes, listLeads } from "@/lib/leads/store";
-import type { Lead } from "@/lib/leads/types";
+import { linkedInOutcomes, listBookings } from "@/lib/bookings/store";
+import type { Booking } from "@/lib/bookings/types";
 
 /** Scheduled emails this late mean the cron isn't running. */
 const OVERDUE_MS = 15 * 60_000;
@@ -14,7 +14,7 @@ export type TaskKind = "email" | "linkedin" | "failed" | "overdue" | "unschedule
 export interface Task {
   key: string;
   kind: TaskKind;
-  lead: Lead;
+  lead: Booking;
   /** The email the task is about, for email tasks. */
   email?: LeadEmail;
   /** Call within a day, or the suggested send time has passed. */
@@ -28,21 +28,21 @@ export interface Task {
 export async function loadTasks(activitySince: Date) {
   const now = Date.now();
   const [leads, activity, linkedIn] = await Promise.all([
-    listLeads(),
+    listBookings(),
     listEmailActivity(activitySince),
     linkedInOutcomes(),
   ]);
   const byId = new Map(leads.map((l) => [l.id, l]));
-  const emails = activity.filter((e) => byId.has(e.leadId));
+  const emails = activity.filter((e) => byId.has(e.bookingId));
   const upcoming = leads.filter((l) => l.bookingStatus === "accepted" && Date.parse(l.startTime) > now);
   const unscheduled = await leadsWithoutEmails(upcoming.map((l) => l.id));
 
-  const soon = (lead: Lead) => Date.parse(lead.startTime) - now < URGENT_MS;
+  const soon = (lead: Booking) => Date.parse(lead.startTime) - now < URGENT_MS;
   const emailTask = (kind: TaskKind, email: LeadEmail, urgent = false): Task => {
-    const lead = byId.get(email.leadId)!;
+    const lead = byId.get(email.bookingId)!;
     return { key: `${kind}-${email.id}`, kind, lead, email, urgent: urgent || soon(lead) };
   };
-  const isUpcoming = (e: LeadEmail) => upcoming.some((l) => l.id === e.leadId);
+  const isUpcoming = (e: LeadEmail) => upcoming.some((l) => l.id === e.bookingId);
 
   const tasks: Task[] = [
     ...emails

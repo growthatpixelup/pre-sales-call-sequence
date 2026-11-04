@@ -1,6 +1,6 @@
 -- Run once in Supabase: Dashboard → SQL Editor → New query → paste → Run.
--- For a new project, then run supabase/migrations/003_email_sequence.sql, 004_email_cron.sql and
--- 005_pipeline_and_replies.sql.
+-- For a new project, then run the migrations in supabase/migrations/ in order (003 onwards).
+-- Migration 009 renames this `leads` table to `bookings` and adds the GTM OS `leads` table.
 -- (002 is already included below.)
 
 create table if not exists public.leads (

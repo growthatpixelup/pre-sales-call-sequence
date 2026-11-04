@@ -2,7 +2,7 @@ import Link from "next/link";
 import { STEP_LABELS } from "@/lib/emails/schedule";
 import { linkedInMessage } from "@/lib/emails/templates";
 import { formatDateTime } from "@/lib/format";
-import type { Lead } from "@/lib/leads/types";
+import type { Booking } from "@/lib/bookings/types";
 import type { Task, TaskKind } from "@/lib/tasks";
 import { markLinkedInSent, scheduleEmails, sendEmailNow, skipLinkedIn } from "../actions";
 import { CopyButton } from "./copy-button";
@@ -28,7 +28,7 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
                 {task.urgent && <Tag>{urgentLabel(task)}</Tag>}
                 <Tag tone="neutral">{KIND_LABELS[task.kind]}</Tag>
               </div>
-              <Link href={`/dashboard/leads/${task.lead.id}`} className="item-title mt-3 inline-block">
+              <Link href={`/dashboard/calls/bookings/${task.lead.id}`} className="item-title mt-3 inline-block">
                 {task.lead.name}
               </Link>
               <p className="m-0 mt-1 text-[0.92rem] text-muted">
@@ -87,7 +87,7 @@ function Actions({ task }: { task: Task }) {
   switch (task.kind) {
     case "email":
       return (
-        <Link href={`/dashboard/leads/${lead.id}/emails/${email!.step}`} className="action">
+        <Link href={`/dashboard/calls/bookings/${lead.id}/emails/${email!.step}`} className="action">
           Personalise &amp; send
         </Link>
       );
@@ -121,7 +121,7 @@ function Actions({ task }: { task: Task }) {
       );
     case "overdue":
       return (
-        <Link href={`/dashboard/leads/${lead.id}`} className="action">
+        <Link href={`/dashboard/calls/bookings/${lead.id}`} className="action">
           Open lead
         </Link>
       );
@@ -136,7 +136,7 @@ function Actions({ task }: { task: Task }) {
   }
 }
 
-function linkedInSearch(lead: Lead) {
+function linkedInSearch(lead: Booking) {
   const keywords = [lead.name, lead.businessName].filter(Boolean).join(" ");
   return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keywords)}`;
 }

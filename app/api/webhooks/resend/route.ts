@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { matchLead, parseAddress, saveReply } from "@/lib/emails/replies";
-import { addLeadEvent } from "@/lib/leads/store";
+import { addBookingEvent, getBooking } from "@/lib/bookings/store";
+import { recordReplyOnLead } from "@/lib/leads/from-booking";
 
 /**
  * Replies to the sequence. Resend receives them (EMAIL_REPLY_TO is an address on a Resend
@@ -50,10 +51,10 @@ export async function POST(request: Request) {
   }
 
   const from = parseAddress(email.from);
-  const leadId = await matchLead(from.email, email.subject ?? "");
+  const bookingId = await matchLead(from.email, email.subject ?? "");
   const saved = await saveReply({
     resendEmailId: emailId,
-    leadId,
+    bookingId,
     fromEmail: from.email,
     fromName: from.name,
     subject: email.subject ?? "",
@@ -63,7 +64,11 @@ export async function POST(request: Request) {
   });
   if (!saved) return Response.json({ ok: true, duplicate: true });
 
-  if (leadId) await addLeadEvent(leadId, "replied", email.subject || undefined);
+  if (bookingId) {
+    await addBookingEvent(bookingId, "replied", email.subject || undefined);
+    const booking = await getBooking(bookingId);
+    if (booking) await recordReplyOnLead(booking, email.created_at);
+  }
 
   const forwardTo = process.env.REPLY_FORWARD_TO;
   if (forwardTo && process.env.EMAIL_FROM) {

@@ -22,7 +22,7 @@ export function ReplyList({
       {replies.map((reply) => {
         const { body, quoted } = splitQuoted(reply.text);
         const unread = !reply.readAt;
-        const leadName = reply.leadId ? leadNames?.get(reply.leadId) : undefined;
+        const leadName = reply.bookingId ? leadNames?.get(reply.bookingId) : undefined;
         return (
           <li key={reply.id} className={unread ? "item-picked" : undefined}>
             <div className="item">
@@ -32,10 +32,10 @@ export function ReplyList({
                   <span className="text-text">{reply.fromName ?? reply.fromEmail}</span>
                   {reply.fromName && <> · {reply.fromEmail}</>}
                   {leadNames &&
-                    (reply.leadId ? (
+                    (reply.bookingId ? (
                       <>
                         {" · "}
-                        <Link href={`/dashboard/leads/${reply.leadId}`} className="link">
+                        <Link href={`/dashboard/calls/bookings/${reply.bookingId}`} className="link">
                           {leadName ?? "View lead"}
                         </Link>
                       </>
