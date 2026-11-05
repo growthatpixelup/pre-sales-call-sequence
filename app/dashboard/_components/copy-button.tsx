@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Icon } from "./ui";
 
-export function CopyButton({ text }: { text: string }) {
+/** `plain`: a quiet "Copy" button without the icon (Content OS cards). */
+export function CopyButton({ text, plain = false }: { text: string; plain?: boolean }) {
   const [copied, setCopied] = useState(false);
   return (
     <>
@@ -19,9 +20,9 @@ export function CopyButton({ text }: { text: string }) {
             // Clipboard blocked (e.g. not https); the text is on screen to copy by hand.
           }
         }}
-        className="action action-copy"
+        className={plain ? "bg-panel-2 px-3 py-1.5 text-[0.9rem] text-body hover:text-text" : "action action-copy"}
       >
-        <Icon name="copy" />
+        {!plain && <Icon name="copy" />}
         {copied ? "Copied" : "Copy"}
       </button>
       <div className="toast" data-show={copied} role="status" aria-live="polite">

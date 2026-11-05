@@ -172,6 +172,32 @@ export async function listActivity(leadId: string): Promise<LeadActivity[]> {
 }
 
 /**
+ * The newest `perLead` activity entries for every lead from one origin, keyed by lead id. One
+ * joined query (paged past Supabase's 1,000-row cap) instead of one query per lead.
+ */
+export async function recentActivityByOrigin(origin: Origin, perLead = 3): Promise<Map<string, LeadActivity[]>> {
+  const PAGE = 1000;
+  const byLead = new Map<string, LeadActivity[]>();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase()
+      .from("lead_activity")
+      .select("id, lead_id, type, detail, at, leads!inner(origin)")
+      .eq("leads.origin", origin)
+      .order("at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (error) fail("load lead activity", error);
+    const rows = data as unknown as { id: number; lead_id: string; type: string; detail: string | null; at: string }[];
+    for (const a of rows) {
+      const list = byLead.get(a.lead_id) ?? [];
+      if (list.length < perLead) list.push({ id: a.id, leadId: a.lead_id, type: a.type, detail: a.detail, at: a.at });
+      byLead.set(a.lead_id, list);
+    }
+    if (rows.length < PAGE) return byLead;
+  }
+}
+
+/**
  * Adds to the lead's timeline. `touch` marks a two-way contact (a DM, email, call, reply), which
  * moves "last touch" forward; notes and stage changes don't.
  */

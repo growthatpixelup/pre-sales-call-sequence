@@ -14,6 +14,16 @@
   --placeholder: #5e5e5e;
   --blue: #1f3bf0;
   --blue-hover: #3450ff;
+  /* Text on the blue accent. */
+  --on-accent: #ffffff;
+  /* Content OS: chart series (validated for colour-blind separation on both surfaces) and change colours. */
+  --series-x: #3987e5;
+  --series-li: #d95926;
+  --good: #3fb950;
+  --bad: #f85149;
+  --warn: #d29922;
+  /* Links inside post text. */
+  --link: #7b9cff;
   --sans: var(--font-inter), "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --display: var(--font-inter-tight), "Inter Tight", var(--font-inter), "Inter", system-ui, sans-serif;
   --mono: var(--font-jetbrains-mono), "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -33,9 +43,39 @@
   --color-hint: var(--hint);
   --color-blue: var(--blue);
   --color-blue-hover: var(--blue-hover);
+  --color-on-accent: var(--on-accent);
+  --color-series-x: var(--series-x);
+  --color-series-li: var(--series-li);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+  --color-link: var(--link);
   --font-sans: var(--sans);
   --font-display: var(--display);
   --font-mono: var(--mono);
+}
+
+/* Content OS follows the system light/dark setting; the rest of the GTM OS stays dark. */
+@media (prefers-color-scheme: light) {
+  :root:has(.content-os) {
+    --bg: #fcfcfb;
+    --panel: #f2f2ef;
+    --panel-2: #e8e8e4;
+    --line: #e2e2dd;
+    --line-2: #cdcdc7;
+    --text: #0b0b0b;
+    --body: #2b2b2b;
+    --muted: #63635c;
+    --hint: #8a8a83;
+    --placeholder: #9a9a93;
+    --series-x: #2a78d6;
+    --series-li: #eb6834;
+    --good: #1a7f37;
+    --bad: #cf222e;
+    --warn: #9a6700;
+    --link: #1f3bf0;
+    color-scheme: light;
+  }
 }
 
 * {
@@ -483,6 +523,7 @@ summary.list-none::-webkit-details-marker {
 
   .btn-primary {
     background: var(--blue);
+    color: var(--on-accent);
   }
 
   .btn-primary:hover {
@@ -571,6 +612,30 @@ summary.list-none::-webkit-details-marker {
   .chip[aria-current="page"] {
     border: 1px solid var(--blue);
     background: var(--blue);
+    color: var(--text);
+  }
+
+  /* Filter pills (Content OS swipe file): quieter than .chip, sentence case. */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--line-2);
+    font-size: 0.92rem;
+    white-space: nowrap;
+    color: var(--body);
+    text-decoration: none;
+  }
+
+  .pill:hover {
+    color: var(--text);
+    border-color: var(--muted);
+  }
+
+  .pill[aria-current="page"] {
+    border-color: var(--blue);
+    background: color-mix(in oklab, var(--blue) 22%, var(--bg));
     color: var(--text);
   }
 

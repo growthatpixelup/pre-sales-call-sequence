@@ -6,7 +6,6 @@ import { dashboardTimeZone, formatMoneyCompact } from "@/lib/analytics";
 import { localDate } from "@/lib/emails/time";
 import { formatYmd } from "@/lib/format";
 import { listLeads } from "@/lib/leads/store";
-import { daysSince } from "@/lib/leads/today";
 import {
   DEAL_TYPES,
   DEAL_TYPE_LABELS,
@@ -21,6 +20,9 @@ import { money } from "@/app/dashboard/_components/lead-bits";
 import { PipelineBoard, type BoardCard, type BoardColumn } from "./board";
 
 export const metadata: Metadata = { title: "Pipeline · GTM OS" };
+
+/** Whole days from `iso` to `now`. */
+const daysSince = (iso: string, now: number) => Math.floor((now - Date.parse(iso)) / 86_400_000);
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
 
