@@ -121,8 +121,8 @@ export function SwipeCard({ swipe }: { swipe: Swipe }) {
       )}
 
       <footer className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[0.9rem] text-muted tabular-nums">
-        <span>{whole.format(metrics.likes)} likes</span>
-        <span>{whole.format(metrics.comments)} comments</span>
+        {metrics.likes != null && <span>{whole.format(metrics.likes)} likes</span>}
+        {metrics.comments != null && <span>{whole.format(metrics.comments)} comments</span>}
         {metrics.views > 0 && <span>{whole.format(metrics.views)} views</span>}
         <span className="ml-auto flex items-center gap-3">
           <a href={swipe.url} target="_blank" rel="noopener noreferrer" className="text-muted no-underline hover:text-text hover:underline">

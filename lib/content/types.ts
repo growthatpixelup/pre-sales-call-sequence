@@ -21,11 +21,14 @@ export interface Author {
 
 export interface PostMetrics {
   views: number;
-  likes: number;
-  comments: number;
-  reposts: number;
+  /** Null where the source only reports a total (LinkedIn's top-posts list). */
+  likes: number | null;
+  comments: number | null;
+  reposts: number | null;
   /** Bookmarks / saves; null where the source doesn't report them (Buffer). */
   saves: number | null;
+  /** The source's own engagement total, when it gives one. */
+  engagements?: number | null;
 }
 
 export interface Media {
@@ -65,21 +68,23 @@ export interface DailyMetrics {
   impressions: number;
   engagements: number;
   posts: number;
-  likes: number;
-  comments: number;
-  reposts: number;
-  saves: number;
-  newFollowers: number;
-  /** Followers at the end of the day; null where the source doesn't report them. */
+  /** Null where the source doesn't report it for that day. */
+  likes: number | null;
+  comments: number | null;
+  reposts: number | null;
+  saves: number | null;
+  newFollowers: number | null;
+  /** Followers at the end of the day. */
   followers: number | null;
-  /** X only: replies and reposts the account sent to other people's posts. */
-  repliesSent: number;
-  repostsSent: number;
 }
 
 export interface PlatformAnalytics {
   daily: DailyMetrics[];
   posts: Post[];
+  /** Where the numbers came from, one line per source, for the page to say. */
+  sources: string[];
+  /** First day with impression data; null if none. */
+  since: string | null;
 }
 
 // ---------- Calendar ----------
@@ -169,5 +174,8 @@ export interface SwipeFile {
 }
 
 export function engagementRate(m: PostMetrics): number | null {
-  return m.views ? (m.likes + m.comments + m.reposts + (m.saves ?? 0)) / m.views : null;
+  if (!m.views) return null;
+  const parts = [m.likes, m.comments, m.reposts, m.saves];
+  if (parts.every((x) => x == null)) return m.engagements != null ? m.engagements / m.views : null;
+  return parts.reduce<number>((n, x) => n + (x ?? 0), 0) / m.views;
 }

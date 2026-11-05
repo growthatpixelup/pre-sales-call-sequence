@@ -125,3 +125,14 @@ export function inWindow(posts: ScheduledPost[], now: Date): ScheduledPost[] {
   return posts.filter((p) => p.at == null || (Date.parse(p.at) >= from && Date.parse(p.at) <= to));
 }
 
+
+/** Every published Typefully post (no window), for complete post counts in analytics. Cached 10 minutes. */
+export const readTypefullyPublished = cached(10 * 60_000, async () => {
+  const key = process.env.TYPEFULLY_API_KEY;
+  if (!key) throw new NotConnected(["TYPEFULLY_API_KEY"]);
+  const drafts = await listAll(key, "published", "-published_at");
+  return drafts
+    .flatMap(fromTypefullyDraft)
+    .filter((p) => p.status === "published" && p.at)
+    .map((p) => ({ platform: p.platform, text: p.text, at: p.at!, url: p.url }));
+});

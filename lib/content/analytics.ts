@@ -24,56 +24,44 @@ export function withOutliers<T extends Post>(posts: T[]): T[] {
   });
 }
 
-export interface Totals {
-  impressions: number;
-  engagements: number;
-  posts: number;
-  likes: number;
-  comments: number;
-  reposts: number;
-  saves: number;
-  newFollowers: number;
-  repliesSent: number;
-  repostsSent: number;
-  /** Followers at the end of the range; null without data. */
+const SUMMED = ["impressions", "engagements", "posts", "likes", "comments", "reposts", "saves", "newFollowers"] as const;
+type Summed = (typeof SUMMED)[number];
+
+export interface Totals extends Record<Summed, number> {
+  /** Followers at the end of the range (last day that has a count); null without data. */
   followers: number | null;
+  /** The day that follower count is from. */
+  followersOn: string | null;
   /** Engagements ÷ impressions; null without impressions. */
   engagementRate: number | null;
+  /** Which sums had data on at least one day (a 0 from "not reported" isn't a real 0). */
+  has: Record<Summed | "followers", boolean>;
 }
-
-const SUMMED = [
-  "impressions",
-  "engagements",
-  "posts",
-  "likes",
-  "comments",
-  "reposts",
-  "saves",
-  "newFollowers",
-  "repliesSent",
-  "repostsSent",
-] as const;
 
 export function totals(daily: DailyMetrics[], range: DayRange): Totals {
   const days = daily.filter((d) => inRange(d.date, range)).sort((a, b) => a.date.localeCompare(b.date));
-  const t = Object.fromEntries(SUMMED.map((k) => [k, days.reduce((n, d) => n + d[k], 0)])) as Record<
-    (typeof SUMMED)[number],
-    number
-  >;
+  const sums = Object.fromEntries(SUMMED.map((k) => [k, days.reduce((n, d) => n + (d[k] ?? 0), 0)])) as Record<Summed, number>;
+  const has = Object.fromEntries(SUMMED.map((k) => [k, days.some((d) => d[k] != null)])) as Record<Summed, boolean>;
+  const last = [...days].reverse().find((d) => d.followers != null);
   return {
-    ...t,
-    followers: days.length ? days[days.length - 1].followers : null,
-    engagementRate: t.impressions ? t.engagements / t.impressions : null,
+    ...sums,
+    followers: last?.followers ?? null,
+    followersOn: last?.date ?? null,
+    engagementRate: sums.impressions ? sums.engagements / sums.impressions : null,
+    has: { ...has, followers: last != null },
   };
 }
 
 /** Adds two platforms' totals (for the Both view). */
 export function combine(a: Totals, b: Totals): Totals {
-  const t = Object.fromEntries(SUMMED.map((k) => [k, a[k] + b[k]])) as Record<(typeof SUMMED)[number], number>;
+  const sums = Object.fromEntries(SUMMED.map((k) => [k, a[k] + b[k]])) as Record<Summed, number>;
+  const has = Object.fromEntries(SUMMED.map((k) => [k, a.has[k] || b.has[k]])) as Record<Summed, boolean>;
   return {
-    ...t,
+    ...sums,
     followers: a.followers == null && b.followers == null ? null : (a.followers ?? 0) + (b.followers ?? 0),
-    engagementRate: t.impressions ? t.engagements / t.impressions : null,
+    followersOn: a.followersOn ?? b.followersOn,
+    engagementRate: sums.impressions ? sums.engagements / sums.impressions : null,
+    has: { ...has, followers: a.has.followers || b.has.followers },
   };
 }
 

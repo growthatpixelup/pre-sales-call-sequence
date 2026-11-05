@@ -45,3 +45,7 @@ env.local
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Analytics exports (LinkedIn .xlsx, X CSVs): personal data, import them, never commit
+*.xlsx
+*analytics*.csv

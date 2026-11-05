@@ -8,7 +8,9 @@ import { fromSwipeRow, type SwipeRow } from "../../lib/content/sources";
 import { filterSwipes, swipeStats } from "../../lib/content/swipes";
 import type { DailyMetrics, Post, ScheduledPost, Swipe } from "../../lib/content/types";
 import { fromTypefullyDraft, type TypefullyDraft } from "../../lib/content/schedulers/typefully";
-import { analyticsFromSent, type SentPostLike } from "../../lib/content/buffer-analytics";
+import { analyticsFromSent, buildAnalytics, type SentPostLike } from "../../lib/content/buffer-analytics";
+import { parseLinkedInExport, textFromSlug } from "../../lib/content/linkedin-export";
+import { parseCsv, parseXContent, parseXOverview, xCsvKind } from "../../lib/content/x-export";
 import { fromBufferPost, platformOf } from "../../lib/content/schedulers/buffer";
 
 const post = (id: string, views: number, handle = "me"): Post => ({
@@ -54,7 +56,7 @@ describe("analytics", () => {
   it("sums a range and compares periods", () => {
     const day = (date: string, impressions: number, followers: number): DailyMetrics => ({
       date, impressions, engagements: impressions / 10, posts: 1, likes: 0, comments: 0, reposts: 0, saves: 0,
-      newFollowers: 1, followers, repliesSent: 0, repostsSent: 0,
+      newFollowers: 1, followers,
     });
     const t = totals([day("2026-11-01", 100, 10), day("2026-11-02", 300, 12), day("2026-11-03", 999, 99)], { from: "2026-11-01", to: "2026-11-02" });
     assert.equal(t.impressions, 400);
@@ -343,5 +345,106 @@ describe("open slots", () => {
     assert.deepEqual(openSlotTimes(["12:00", "17:00", "21:00"], [at("12:00"), at("21:00")]), ["17:00"]);
     assert.deepEqual(openSlotTimes(["12:00", "17:00", "21:00"], [at("20:45")]), ["12:00", "17:00"]);
     assert.deepEqual(openSlotTimes(["12:00"], [at("09:00"), at("10:00")]), []);
+  });
+});
+
+describe("analytics exports", () => {
+  it("parses X's overview and content CSVs", () => {
+    const overview = parseCsv('Date,Impressions,Likes,Engagements,Bookmarks,Shares,New follows,Unfollows,Replies,Reposts,Profile visits\n"Thu, Oct 30, 2025",12034,210,512,33,4,18,2,40,12,90\n"Fri, Oct 31, 2025","8,000",100,300,10,1,5,0,20,6,30\n');
+    assert.equal(xCsvKind(overview), "overview");
+    const o = parseXOverview(overview);
+    assert.deepEqual(o.days.map((d) => [d.date, d.impressions, d.saves, d.new_followers]), [["2025-10-30", 12034, 33, 18], ["2025-10-31", 8000, 10, 5]]);
+    const content = parseCsv('Post id,Date,Post text,Post Link,Impressions,Likes,Engagements,Bookmarks,Shares,New follows,Replies,Reposts,Profile visits\n2117640505492386017,"Mon, Nov 3, 2026","sealed, signed, delivered\n// replay",https://x.com/dakshpixelup/status/2117640505492386017,5501,219,300,40,2,3,8,11,20\n');
+    assert.equal(xCsvKind(content), "content");
+    const [p] = parseXContent(content, "dakshpixelup").posts;
+    assert.deepEqual([p.post_id, p.text, p.impressions, p.saves, p.published_at.slice(0, 10)], ["2117640505492386017", "sealed, signed, delivered\n// replay", 5501, 40, "2026-11-03"]);
+  });
+
+  it("reads LinkedIn's export sheets", () => {
+    const sheets = new Map<string, string[][]>([
+      ["DISCOVERY", [["Overall Performance", "7/24/2026 - 7/25/2026"], ["Impressions", "8612"], ["Members reached", "5000"]]],
+      ["ENGAGEMENT", [["Date", "Impressions", "Engagements"], ["7/24/2026", "5485", "75"], ["7/25/2026", "3127", "48"]]],
+      ["FOLLOWERS", [["Total followers on 7/25/2026", "10414"], [], ["Date", "New followers"], ["7/24/2026", "25"], ["7/25/2026", "12"]]],
+      ["TOP POSTS", [["Maximum of 50 posts"], [], ["Post URL", "Post Publish Date", "Engagements", "", "Post URL", "Post Publish Date", "Impressions"],
+        ["https://www.linkedin.com/posts/dakshpixelup_ai-will-replace-designers-very-soon-share-7506047833200877572-mgaN", "7/24/2026", "798", "", "https://www.linkedin.com/posts/dakshpixelup_ai-will-replace-designers-very-soon-share-7506047833200877572-mgaN", "7/24/2026", "106310"]]],
+    ]);
+    const e = parseLinkedInExport(sheets);
+    assert.deepEqual(e.days.map((d) => [d.date, d.followers]), [["2026-07-24", 10402], ["2026-07-25", 10414]]);
+    assert.deepEqual([e.posts[0].impressions, e.posts[0].engagements, e.posts[0].text], [106310, 798, "Ai will replace designers very soon…"]);
+    assert.equal(textFromSlug("https://www.linkedin.com/feed/update/urn:li:share:1"), null);
+  });
+
+  it("merges an export with Buffer and Typefully, export first", () => {
+    const tz = "Asia/Kolkata";
+    const data = buildAnalytics(
+      "x",
+      {
+        imported: {
+          daily: [{ platform: "x", date: "2026-11-01", impressions: 9000, engagements: 300, likes: 200, comments: 10, reposts: 5, saves: 20, new_followers: 7, followers: null, profile_visits: null }],
+          posts: [{ platform: "x", post_id: "111", url: "https://x.com/d/status/111", published_at: "2026-11-01T11:30:00Z", text: "from export", post_type: null, impressions: 9000, engagements: 300, likes: 200, comments: 10, reposts: 5, saves: 20, shares: null, new_followers: null, profile_visits: null }],
+        },
+        buffer: [
+          { id: "b1", platform: "x", text: "same post via buffer", sentAt: "2026-11-01T11:30:00Z", url: "https://x.com/d/status/111", metrics: { impressions: 100 } },
+          { id: "b2", platform: "x", text: "newer", sentAt: "2026-11-04T11:30:00Z", url: "https://x.com/d/status/222", metrics: { impressions: 4000, reactions: 50 } },
+        ],
+        typefully: [{ platform: "x", text: "only in typefully", at: "2026-11-03T15:30:00Z", url: "https://x.com/d/status/333" }],
+      },
+      tz,
+    );
+    assert.deepEqual(data.daily.map((d) => [d.date, d.impressions, d.posts]), [["2026-11-01", 9000, 1], ["2026-11-03", 0, 1], ["2026-11-04", 4000, 1]]);
+    assert.equal(data.posts.find((p) => p.url.endsWith("111"))?.metrics.views, 9000); // export wins over Buffer
+    assert.equal(data.posts.length, 3);
+    assert.ok(data.sources.some((l) => l.includes("export")) && data.sources.some((l) => l.includes("Buffer")) && data.sources.some((l) => l.includes("Typefully")));
+    assert.equal(data.since, "2026-11-04"); // the Typefully-only post on 3 Nov has no impressions
+  });
+});
+
+describe("X public embed", () => {
+  it("reads likes, replies, text and media, and derives react-tweet's token", async () => {
+    const { embedToken, fromEmbed } = await import("../../lib/content/x-embed");
+    assert.match(embedToken("2117640505492386017"), /^[0-9a-z]+$/);
+    const e = fromEmbed("1", {
+      favorite_count: 218,
+      conversation_count: 7,
+      text: "sealed, signed, delivered // replay https://t.co/Abc123",
+      display_text_range: [0, 35],
+      photos: [{ url: "https://pbs.twimg.com/media/a.jpg" }],
+      video: { poster: "https://pbs.twimg.com/v.jpg", variants: [{ type: "video/mp4", src: "https://video.twimg.com/v.mp4" }] },
+    });
+    assert.deepEqual([e.likes, e.replies, e.text], [218, 7, "sealed, signed, delivered // replay"]);
+    assert.deepEqual(e.media.map((m) => [m.kind, m.url]), [["image", "https://pbs.twimg.com/media/a.jpg"], ["video", "https://video.twimg.com/v.mp4"]]);
+  });
+
+  it("fills a Typefully-only X post from the embed and dates the data", async () => {
+    const { fromEmbed } = await import("../../lib/content/x-embed");
+    const data = buildAnalytics(
+      "x",
+      {
+        buffer: [{ id: "b", platform: "x", text: "t", sentAt: "2026-10-29T11:30:00Z", url: "https://x.com/d/status/9", metrics: { impressions: 10 } }],
+        typefully: [{ platform: "x", text: "short…", at: "2026-10-20T15:30:00Z", url: "https://x.com/d/status/5" }],
+        embeds: new Map([["5", fromEmbed("5", { favorite_count: 40, conversation_count: 3, text: "the full text" })]]),
+      },
+      "Asia/Kolkata",
+    );
+    const p = data.posts.find((x) => x.url.endsWith("/5"))!;
+    assert.deepEqual([p.metrics.likes, p.metrics.comments, p.text], [40, 3, "the full text"]);
+    assert.equal(data.daily.find((d) => d.date === "2026-10-20")?.likes, 40);
+    assert.equal(data.daily.find((d) => d.date === "2026-10-20")?.engagements, 0);
+    assert.equal(data.since, "2026-10-29");
+  });
+});
+
+describe("follower-only snapshots", () => {
+  it("add followers without hiding Buffer's numbers for that day", () => {
+    const data = buildAnalytics(
+      "x",
+      {
+        imported: { daily: [{ platform: "x", date: "2026-11-04", impressions: 0, engagements: 0, likes: null, comments: null, reposts: null, saves: null, new_followers: 12, followers: 5120, profile_visits: null }], posts: [] },
+        buffer: [{ id: "b", platform: "x", text: "t", sentAt: "2026-11-04T11:30:00Z", url: "https://x.com/d/status/9", metrics: { impressions: 3000 } }],
+      },
+      "Asia/Kolkata",
+    );
+    const d = data.daily.find((x) => x.date === "2026-11-04")!;
+    assert.deepEqual([d.impressions, d.followers, d.newFollowers], [3000, 5120, 12]);
   });
 });

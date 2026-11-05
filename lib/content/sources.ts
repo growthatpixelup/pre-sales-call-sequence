@@ -4,7 +4,10 @@ import { dashboardTimeZone } from "@/lib/analytics";
 import { supabase } from "@/lib/supabase";
 import { xAvatarUrl } from "@/lib/leads/x-leads";
 import { NotConnected } from "./errors";
-import { analyticsFromSent } from "./buffer-analytics";
+import { readTypefullyPublished } from "./schedulers/typefully";
+import { buildAnalytics, postKey } from "./buffer-analytics";
+import { readXEmbeds } from "./x-embed";
+import type { DailyRow, PostRow } from "./imports";
 import { readBuffer, readBufferSent } from "./schedulers/buffer";
 import { readTypefully } from "./schedulers/typefully";
 import {
@@ -43,11 +46,42 @@ async function load<T>(label: string, read: () => Promise<T>): Promise<SourceRes
 export const timeZone = () => (process.env.DASHBOARD_TIMEZONE?.trim() ? dashboardTimeZone() : "Asia/Kolkata");
 
 /**
- * One platform's numbers and posts, from Buffer's per-post metrics on Daksh's channels. Covers
- * posts Buffer published or imported; no followers or bookmarks (Buffer doesn't report them).
+ * One platform's numbers and posts, merged from the platform's own export (migration 014), Buffer's
+ * per-post metrics, and Typefully's published posts (see buffer-analytics.ts). Any one source can be
+ * missing; the page lists the ones that answered.
  */
 export function loadAnalytics(platform: Platform): Promise<SourceResult<PlatformAnalytics>> {
-  return load(`${PLATFORM_LABELS[platform]} analytics (Buffer)`, async () => analyticsFromSent(await readBufferSent(), platform, timeZone()));
+  return load(`${PLATFORM_LABELS[platform]} analytics`, async () => {
+    const [buffer, imported, typefully] = await Promise.allSettled([readBufferSent(), readImported(platform), readTypefullyPublished()]);
+    const value = <T>(r: PromiseSettledResult<T>) => (r.status === "fulfilled" ? r.value : undefined);
+    if ([buffer, imported, typefully].every((r) => r.status === "rejected")) {
+      throw (buffer as PromiseRejectedResult).reason;
+    }
+    const src = { buffer: value(buffer), imported: value(imported) ?? undefined, typefully: value(typefully) };
+    // X: public likes/replies/media for every post we know, by the id in its link.
+    const embeds =
+      platform === "x"
+        ? await readXEmbeds(
+            [...(src.buffer ?? []).filter((p) => p.platform === "x").map((p) => p.url), ...(src.typefully ?? []).filter((p) => p.platform === "x").map((p) => p.url), ...(src.imported?.posts ?? []).map((p) => p.url)]
+              .map((u) => postKey("x", u))
+              .filter((k): k is string => Boolean(k)),
+          )
+        : undefined;
+    const data = buildAnalytics(platform, { ...src, embeds }, timeZone());
+    if (!data.daily.length && !data.posts.length) throw new NotConnected(["an analytics export (scripts/import-analytics-export.mts)"]);
+    return data;
+  });
+}
+
+/** The platform's imported export rows, or null before migration 014 / any import. */
+async function readImported(platform: Platform): Promise<{ daily: DailyRow[]; posts: PostRow[] } | null> {
+  const db = supabase();
+  const [daily, posts] = await Promise.all([
+    db.from("content_daily").select("*").eq("platform", platform).order("date").limit(5000),
+    db.from("content_posts").select("*").eq("platform", platform).order("published_at", { ascending: false }).limit(5000),
+  ]);
+  if (daily.error || posts.error) return null;
+  return { daily: daily.data as DailyRow[], posts: posts.data as PostRow[] };
 }
 
 /** Everything one scheduler holds from 3 weeks back to 3 weeks ahead: published, queued, planned, drafts, failed. */

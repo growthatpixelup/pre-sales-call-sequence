@@ -67,8 +67,8 @@ export function PostCard({ post, children }: { post: Post; children?: ReactNode 
       <footer className="border-t border-line px-4 py-3 sm:px-5">
         <dl className="m-0 flex flex-wrap gap-x-4 gap-y-1 text-[0.82rem] text-muted tabular-nums">
           <Metric label="Views" value={formatCompact(post.metrics.views)} />
-          <Metric label="Likes" value={formatCompact(post.metrics.likes)} />
-          <Metric label="Comments" value={formatCompact(post.metrics.comments)} />
+          {post.metrics.likes != null && <Metric label="Likes" value={formatCompact(post.metrics.likes)} />}
+          {post.metrics.comments != null && <Metric label="Comments" value={formatCompact(post.metrics.comments)} />}
           {post.metrics.saves != null && <Metric label="Saves" value={formatCompact(post.metrics.saves)} />}
           <Metric label="Eng. rate" value={formatPct(er)} />
         </dl>

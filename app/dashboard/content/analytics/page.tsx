@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { localDate } from "@/lib/emails/time";
+import { formatYmd } from "@/lib/format";
 import { change, combine, impressionSeries, topPosts, totals, viewsByWeekday, type Totals } from "@/lib/content/analytics";
 import { TOOLS } from "@/lib/content/config";
 import { formatCompact, formatPct, plural } from "@/lib/content/format";
@@ -36,7 +37,7 @@ const SERIES: Record<Platform, ChartSeries> = {
   linkedin: { label: "LinkedIn", colorClass: "bg-series-li" },
 };
 
-const SUB = "How Daksh's posts on X and LinkedIn are doing: reach, engagement and the posts that carried the period. Numbers come from Buffer: each post's lifetime metrics, counted on the day it went out.";
+const SUB = "How Daksh's posts on X and LinkedIn are doing: reach, engagement, followers and the posts that carried the period.";
 
 export default function AnalyticsPage({ searchParams }: PageProps<"/dashboard/content/analytics">) {
   return (
@@ -91,7 +92,7 @@ async function Analytics({ searchParams }: { searchParams: PageProps<"/dashboard
   const prev = new Map([...ok].map(([p, d]) => [p, totals(d.daily, range.previous)]));
   const sum = (m: Map<Platform, Totals>) => [...m.values()].reduce((a, b) => combine(a, b));
   const posts = [...ok.values()].flatMap((d) => d.posts);
-  const top = topPosts(posts, range, 12, dateOf);
+  const top = topPosts(posts.filter((p) => p.metrics.views > 0), range, 12, dateOf);
 
   const header = (stats: Stat[]) => (
     <ContentHeader title="Analytics" sub={SUB} stats={stats} links={links}>
@@ -118,12 +119,39 @@ async function Analytics({ searchParams }: { searchParams: PageProps<"/dashboard
   const pv = sum(prev);
   const periodLabel = PERIODS.find((p) => p.value === period)!.label.toLowerCase();
 
+  // Compare only when every source covers the previous period; otherwise the arrow compares with nothing.
+  const latestSince = [...ok.values()].map((d) => d.since).filter((d): d is string => Boolean(d)).sort().at(-1) ?? null;
+  const comparable = [...ok.values()].every((d) => d.since != null && d.since <= range.previous.from);
+  const ch = (a: number | null, b: number | null) => (comparable ? change(a, b) : null);
+  const followerPlatforms = platforms.filter((p) => cur.get(p)?.has.newFollowers).map((p) => PLATFORM_LABELS[p]);
+  const onlySome = followerPlatforms.length > 0 && followerPlatforms.length < ok.size;
+
+  const perPost = (t: Totals) => (t.posts ? Math.round(t.impressions / t.posts) : 0);
+  const followers: Stat | null = c.has.followers
+    ? {
+        label: "Followers",
+        value: formatCompact(c.followers ?? 0),
+        change: ch(c.followers, pv.followers),
+        sub: c.followersOn && c.followersOn < range.to ? `As of ${formatYmd(c.followersOn)}` : undefined,
+      }
+    : null;
+  const newFollowers: Stat | null = c.has.newFollowers
+    ? {
+        label: "New followers",
+        value: `+${formatCompact(c.newFollowers)}`,
+        change: ch(c.newFollowers, pv.newFollowers),
+        sub: onlySome ? `${followerPlatforms.join(", ")} only` : undefined,
+      }
+    : null;
+  const tile = (label: string, key: "likes" | "comments" | "reposts" | "saves", sub?: string): Stat | null =>
+    c.has[key] ? { label, value: formatCompact(c[key]), change: ch(c[key], pv[key]), sub } : null;
+  const pick = (list: (Stat | null)[], n = 4) => list.filter((x): x is Stat => x != null).slice(0, n);
+
   let stats: Stat[];
   let tiles: Stat[];
-  const perPost = (t: Totals) => (t.posts ? Math.round(t.impressions / t.posts) : 0);
   if (view === "both") {
     const share = (p: Platform) => (c.impressions && cur.get(p) ? Math.round((cur.get(p)!.impressions / c.impressions) * 100) : null);
-    stats = [
+    stats = pick([
       {
         label: "Impressions",
         value: formatCompact(c.impressions),
@@ -131,28 +159,37 @@ async function Analytics({ searchParams }: { searchParams: PageProps<"/dashboard
       },
       { label: "Engagement rate", value: formatPct(c.engagementRate), sub: "Engagements ÷ impressions" },
       { label: "Posts", value: formatCompact(c.posts), sub: `In the last ${periodLabel}` },
+      newFollowers ? { ...newFollowers, label: "Follower growth", change: undefined } : null,
       { label: "Per post", value: formatCompact(perPost(c)), sub: "Average impressions" },
-    ];
-    tiles = [
-      { label: "Impressions", value: formatCompact(c.impressions), change: change(c.impressions, pv.impressions) },
-      { label: "Engagements", value: formatCompact(c.engagements), change: change(c.engagements, pv.engagements) },
-      { label: "Posts", value: formatCompact(c.posts), change: change(c.posts, pv.posts) },
-      { label: "Per post", value: formatCompact(perPost(c)), change: change(perPost(c), perPost(pv)) },
-    ];
+    ]);
+    tiles = pick([
+      { label: "Impressions", value: formatCompact(c.impressions), change: ch(c.impressions, pv.impressions) },
+      { label: "Engagements", value: formatCompact(c.engagements), change: ch(c.engagements, pv.engagements) },
+      { label: "Posts", value: formatCompact(c.posts), change: ch(c.posts, pv.posts) },
+      newFollowers,
+      { label: "Per post", value: formatCompact(perPost(c)), change: ch(perPost(c), perPost(pv)) },
+    ]);
   } else {
-    stats = [
-      { label: "Impressions", value: formatCompact(c.impressions), change: change(c.impressions, pv.impressions) },
-      { label: "Engagement rate", value: formatPct(c.engagementRate), change: change(c.engagementRate, pv.engagementRate) },
-      { label: view === "x" ? "Likes" : "Reactions", value: formatCompact(c.likes), change: change(c.likes, pv.likes) },
-      { label: "Posts", value: formatCompact(c.posts), change: change(c.posts, pv.posts) },
-    ];
-    tiles = [
-      { label: "Engagements", value: formatCompact(c.engagements), change: change(c.engagements, pv.engagements), sub: "Reactions, comments, reposts, clicks" },
-      { label: "Comments", value: formatCompact(c.comments), change: change(c.comments, pv.comments) },
-      { label: "Reposts", value: formatCompact(c.reposts), change: change(c.reposts, pv.reposts) },
-      { label: "Per post", value: formatCompact(perPost(c)), change: change(perPost(c), perPost(pv)), sub: "Average impressions" },
-    ];
+    stats = pick([
+      { label: "Impressions", value: formatCompact(c.impressions), change: ch(c.impressions, pv.impressions) },
+      { label: "Engagement rate", value: formatPct(c.engagementRate), change: ch(c.engagementRate, pv.engagementRate) },
+      followers,
+      tile(view === "x" ? "Likes" : "Reactions", "likes"),
+      { label: "Posts", value: formatCompact(c.posts), change: ch(c.posts, pv.posts) },
+    ]);
+    tiles = pick(
+      [
+        { label: "Engagements", value: formatCompact(c.engagements), change: ch(c.engagements, pv.engagements) },
+        newFollowers,
+        view === "x" ? tile("Bookmarks", "saves") : null,
+        tile("Comments", "comments"),
+        tile("Reposts", "reposts"),
+        { label: "Per post", value: formatCompact(perPost(c)), change: ch(perPost(c), perPost(pv)), sub: "Average impressions" },
+      ],
+      8,
+    );
   }
+  const sourceLines = [...new Set([...ok.entries()].flatMap(([, d]) => d.sources))];
 
   const shown = platforms.filter((p) => ok.has(p));
   const series = impressionSeries(Object.fromEntries(shown.map((p) => [p, ok.get(p)!.daily])), buckets(range, range.unit));
@@ -176,14 +213,25 @@ async function Analytics({ searchParams }: { searchParams: PageProps<"/dashboard
 
       <ContentSection
         label="Change vs previous period"
-        explain={`Posts published in the last ${periodLabel}, compared with posts published in the ${range.days} days before. Buffer doesn't report followers or bookmarks.`}
+        explain={
+          comparable
+            ? `The last ${periodLabel}, compared with the ${range.days} days before.`
+            : `The last ${periodLabel}. No comparison: the data starts ${latestSince ? formatYmd(latestSince) : "later"}, after the ${range.days} days before this began. Pick a shorter period, or import an older export.`
+        }
       >
         <StatGrid stats={tiles} />
+        {sourceLines.length > 0 && (
+          <ul className="m-0 mt-4 grid gap-1 p-0 text-[0.82rem] text-muted list-none">
+            {sourceLines.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        )}
       </ContentSection>
 
       <ContentSection
         label="Impressions over time"
-        explain={`Lifetime impressions of the posts published each ${range.unit}${shown.length > 1 ? ", X and LinkedIn stacked" : ""}.`}
+        explain={`Impressions per ${range.unit}${shown.length > 1 ? ", X and LinkedIn stacked" : ""}. Days from an export count views that day; later days count each post's lifetime views on its publish day.`}
       >
         {c.impressions ? (
           <BarChart points={points} series={shown.map((p) => SERIES[p])} measure="Impressions" firstColumn={unitWord} />
