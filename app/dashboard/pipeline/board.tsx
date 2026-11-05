@@ -25,6 +25,8 @@ export interface BoardColumn {
   stage: Stage;
   /** "est $40k · closed $12k". */
   totals: string;
+  /** Leads in this stage not shown as cards (the column shows the most recent ones). */
+  more?: number;
 }
 
 type Move = { id: string; stage: Stage };
@@ -102,7 +104,7 @@ export function PipelineBoard({ columns, cards, showExits }: { columns: BoardCol
               <header className="board-col-head">
                 <div className="flex items-baseline justify-between gap-2">
                   <h2 className="mono-label m-0 text-text">{STAGE_LABELS[col.stage]}</h2>
-                  <span className="font-mono text-[0.78rem] tabular-nums text-muted">{inCol.length}</span>
+                  <span className="font-mono text-[0.78rem] tabular-nums text-muted">{inCol.length + (col.more ?? 0)}</span>
                 </div>
                 {col.totals && <p className="hint m-0 mt-1 tabular-nums">{col.totals}</p>}
               </header>
@@ -110,7 +112,12 @@ export function PipelineBoard({ columns, cards, showExits }: { columns: BoardCol
                 {exit && !showExits ? (
                   <p className="hint m-0 p-1">Drop here{inCol.length ? `. ${inCol.length} hidden` : ""}.</p>
                 ) : (
-                  inCol.map((card) => <Card key={card.id} card={card} pending={movingId === card.id} />)
+                  <>
+                    {inCol.map((card) => (
+                      <Card key={card.id} card={card} pending={movingId === card.id} />
+                    ))}
+                    {col.more ? <p className="hint m-0 p-1">+{col.more} older. Narrow the period or search to see them.</p> : null}
+                  </>
                 )}
               </div>
             </section>
