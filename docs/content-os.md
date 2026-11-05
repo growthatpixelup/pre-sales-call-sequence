@@ -12,6 +12,7 @@ source without credentials shows "not connected" and names the env vars it needs
 | `lib/content/config.ts` | Creator handles, Typefully social set (338929), target cadence, outside-tool links |
 | `lib/content/analytics.ts`, `calendar.ts`, `swipes.ts` | Pure maths (totals, outliers, merging schedulers, health, filters), tested in `tests/content/` |
 | `app/dashboard/content/` | The three pages and shared pieces (`_components/`) |
+| `lib/content/mcp.ts`, `app/api/mcp/route.ts` | Read-only MCP server so Claude can pull outliers (see below) |
 
 Every loader returns `ok`, `not_connected` or `error`, and pages render each source on its own, so one failing
 source never blanks a page. Light mode follows the system setting on Content pages only.
@@ -92,3 +93,21 @@ header shows the last `ok`/`partial` run as "synced 3h ago", and flags a newer `
 - Set `last_synced_at = now()` on every upsert: the column default only applies on insert.
 - Keep the `pillar` and `hook_pattern` columns in step with `analysis` (the page prefers the columns).
 - Write with the service role key, server side: RLS is on with no policies, like every table here.
+
+## MCP server (Claude reads outliers)
+
+`/api/mcp` is a read-only MCP server (Streamable HTTP, stateless) over the swipe file and Daksh's own analytics,
+so Claude can pull outliers for hooks and formats. Off until `CONTENT_MCP_TOKEN` is set (any long random string).
+It sits outside `/dashboard`, so the basic-auth gate doesn't apply; the token does.
+
+| Tool | Gives |
+|---|---|
+| `hook_patterns` | Swipes grouped by hook pattern, format or pillar: count, median/best outlier, top examples |
+| `list_outliers` | Swipes at or above an outlier score, filtered by platform, pillar, hook pattern, format, media, text, recency |
+| `get_swipe` | One swipe in full (every thread post, media, breakdown), by id or URL |
+| `my_outliers` | Daksh's own posts that beat his median, from the analytics sources |
+
+Connect:
+- **Claude Code:** `claude mcp add --transport http content-os https://<app>/api/mcp --header "Authorization: Bearer <token>"`
+- **Claude Desktop / claude.ai:** Settings → Connectors → Add custom connector → URL `https://<app>/api/mcp?token=<token>`
+  (custom connectors can't send headers, so the token goes in the URL; treat that URL as the secret).
