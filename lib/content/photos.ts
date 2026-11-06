@@ -138,6 +138,34 @@ export async function updatePhoto(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Points a photo at a new file already in Storage (a JPEG made from its HEIC), then removes the
+ * old file. Caption, tags and used status stay.
+ */
+export async function replacePhotoFile(
+  id: string,
+  file: { path: string; fileName: string; contentType: string; sizeBytes: number; width: number | null; height: number | null },
+): Promise<void> {
+  const client = db();
+  const { data, error } = await client.from("photos").select("path").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Photo not found.");
+  const { error: upError } = await client
+    .from("photos")
+    .update({
+      path: file.path,
+      file_name: file.fileName,
+      content_type: file.contentType,
+      size_bytes: file.sizeBytes,
+      width: file.width,
+      height: file.height,
+    })
+    .eq("id", id);
+  if (upError) throw new Error(upError.message);
+  // The row already points at the new file; a leftover old file only costs storage.
+  await client.storage.from(PHOTO_BUCKET).remove([data.path as string]);
+}
+
 export async function deletePhoto(id: string): Promise<void> {
   const client = db();
   const { data, error } = await client.from("photos").select("path").eq("id", id).maybeSingle();

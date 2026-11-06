@@ -3,42 +3,55 @@
 import { useRef, useState, useTransition } from "react";
 import { PHOTO_TYPES, uploadProblem } from "@/lib/content/photo-library";
 import { prepareUploads, savePhotos } from "./actions";
+import { looksHeic } from "./heic";
+import { dimensions, putToStorage, storable } from "./upload";
 
 type NewPhoto = Parameters<typeof savePhotos>[0][number];
 
-/** Width and height, when the browser can decode the file (it can't decode HEIC outside Safari). */
-async function dimensions(file: File): Promise<{ width: number | null; height: number | null }> {
-  try {
-    const bitmap = await createImageBitmap(file);
-    const size = { width: bitmap.width, height: bitmap.height };
-    bitmap.close();
-    return size;
-  } catch {
-    return { width: null, height: null };
-  }
-}
-
-/** Drop or pick photos; each goes straight to Supabase Storage, then gets a row in `photos`. */
+/** Drop or pick photos; HEIC becomes JPEG, then each goes straight to Supabase Storage and gets a row. */
 export function PhotoUploader() {
   const input = useRef<HTMLInputElement>(null);
   const [tags, setTags] = useState("");
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   function upload(list: FileList | File[]) {
-    const all = [...list];
-    if (!all.length) return;
-    const problems = all.map(uploadProblem).filter((p): p is string => Boolean(p));
-    const files = all.filter((f) => !uploadProblem(f));
-    if (!files.length) {
-      setStatus({ ok: false, message: problems.join(" ") });
-      return;
-    }
+    const picked = [...list];
+    if (!picked.length) return;
     start(async () => {
       setStatus(null);
-      setProgress({ done: 0, total: files.length });
+      const failed: string[] = [];
+
+      // 1. HEIC → JPEG, in the browser.
+      const heic = picked.filter((f) => looksHeic(f)).length;
+      if (heic) setProgress(`Converting ${heic} HEIC photo${heic === 1 ? "" : "s"} to JPEG…`);
+      const converted = await Promise.all(
+        picked.map(async (f) => {
+          try {
+            return await storable(f);
+          } catch {
+            failed.push(`${f.name} couldn't be converted from HEIC.`);
+            return null;
+          }
+        }),
+      );
+      const files: File[] = [];
+      for (const f of converted) {
+        if (!f) continue;
+        const problem = uploadProblem(f);
+        if (problem) failed.push(problem);
+        else files.push(f);
+      }
+      if (!files.length) {
+        setProgress(null);
+        setStatus({ ok: false, message: failed.join(" ") });
+        return;
+      }
+
+      // 2. Signed upload URLs, then the files go straight to Storage.
+      setProgress(`Uploading 0 of ${files.length}…`);
       const targets = await prepareUploads(files.map((f) => ({ name: f.name, type: f.type, size: f.size })));
       if (!targets.ok) {
         setProgress(null);
@@ -46,21 +59,12 @@ export function PhotoUploader() {
         return;
       }
       const saved: NewPhoto[] = [];
-      const failed: string[] = [...problems];
       let done = 0;
       await Promise.all(
         files.map(async (file, i) => {
           const target = targets.data[i];
           try {
-            const [res, size] = await Promise.all([
-              fetch(target.signedUrl, {
-                method: "PUT",
-                body: file,
-                headers: { "content-type": file.type, "x-upsert": "false", "cache-control": "max-age=3600" },
-              }),
-              dimensions(file),
-            ]);
-            if (!res.ok) throw new Error(`${res.status}`);
+            const [, size] = await Promise.all([putToStorage(target.signedUrl, file), dimensions(file)]);
             saved.push({
               path: target.path,
               fileName: file.name,
@@ -75,10 +79,12 @@ export function PhotoUploader() {
             failed.push(`${file.name} didn't upload.`);
           } finally {
             done += 1;
-            setProgress({ done, total: files.length });
+            setProgress(`Uploading ${done} of ${files.length}…`);
           }
         }),
       );
+
+      // 3. One row per stored file.
       const result = saved.length ? await savePhotos(saved, tags) : null;
       setProgress(null);
       if (result && !result.ok) failed.push(result.message);
@@ -113,7 +119,7 @@ export function PhotoUploader() {
         <input
           ref={input}
           type="file"
-          accept={PHOTO_TYPES.join(",")}
+          accept={[...PHOTO_TYPES, ".heic", ".heif"].join(",")}
           multiple
           hidden
           onChange={(e) => e.target.files && upload(e.target.files)}
@@ -128,10 +134,10 @@ export function PhotoUploader() {
             disabled={pending}
           />
         </label>
-        <span className="text-[0.9rem] text-muted">or drop photos here · up to 50 MB each</span>
+        <span className="text-[0.9rem] text-muted">or drop photos here · HEIC is saved as JPEG · up to 50 MB each</span>
       </div>
       <p role="status" aria-live="polite" className={`m-0 text-[0.9rem] ${status && !status.ok ? "text-bad" : "text-muted"}`}>
-        {progress ? `Uploading ${progress.done} of ${progress.total}…` : status?.message}
+        {progress ?? status?.message}
       </p>
     </div>
   );

@@ -6,6 +6,7 @@ import {
   createUploadTargets,
   deletePhoto as removePhoto,
   insertPhotos,
+  replacePhotoFile,
   updatePhoto,
   type NewPhoto,
   type UploadRequest,
@@ -33,6 +34,18 @@ export async function savePhotos(photos: NewPhoto[], tagsInput: string): Promise
   try {
     const tags = parseTags(tagsInput ?? "");
     await insertPhotos(photos.map((p) => ({ ...p, tags: [...new Set([...p.tags, ...tags])] })));
+    refresh();
+    return { ok: true, data: undefined };
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+/** Swaps a stored HEIC for the JPEG the browser made from it and uploaded. */
+export async function swapPhotoFile(id: string, file: Parameters<typeof replacePhotoFile>[1]): Promise<Result> {
+  try {
+    if (file.contentType !== "image/jpeg") throw new Error("Expected a JPEG.");
+    await replacePhotoFile(id, file);
     refresh();
     return { ok: true, data: undefined };
   } catch (e) {

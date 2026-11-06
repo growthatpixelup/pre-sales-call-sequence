@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { PhotoView } from "@/lib/content/photo-library";
-import { deletePhoto, editPhoto, markUnused, markUsed } from "./actions";
+import { deletePhoto, editPhoto, markUnused, markUsed, prepareUploads, swapPhotoFile } from "./actions";
+import { heicToJpeg, looksHeic } from "./heic";
+import { dimensions, putToStorage } from "./upload";
 
 const date = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });
 
@@ -17,6 +19,7 @@ export function PhotoCard({ photo }: { photo: PhotoView }) {
   const [mode, setMode] = useState<"view" | "edit" | "use" | "delete">("view");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const fix = useHeicFix(photo);
 
   const run = (fn: () => Promise<void>) =>
     start(async () => {
@@ -53,7 +56,7 @@ export function PhotoCard({ photo }: { photo: PhotoView }) {
           />
         ) : (
           <div className="grid aspect-[4/3] place-items-center p-4 text-center text-[0.9rem] text-muted">
-            {photo.contentType?.includes("hei") ? "HEIC: no preview in this browser. Download to view." : "Preview unavailable."}
+            {fix.state === "converting" ? "Converting HEIC to JPEG…" : fix.state === "failed" ? "Couldn't convert this HEIC." : "Preview unavailable."}
           </div>
         )}
         {photo.usedAt && (
@@ -133,6 +136,15 @@ export function PhotoCard({ photo }: { photo: PhotoView }) {
           </div>
         )}
 
+        {fix.state === "failed" && (
+          <p role="alert" className="m-0 flex flex-wrap items-center gap-2 text-[0.85rem] text-bad">
+            {fix.error}
+            <button type="button" className="action" onClick={fix.retry}>
+              Try again
+            </button>
+          </p>
+        )}
+
         {mode === "view" && (
           <div className="flex flex-wrap gap-2 border-t border-line pt-3">
             {photo.downloadUrl && (
@@ -166,4 +178,47 @@ export function PhotoCard({ photo }: { photo: PhotoView }) {
       </div>
     </article>
   );
+}
+
+/**
+ * Photos stored as HEIC before uploads converted them: fetch the original, turn it into a JPEG in
+ * the browser, upload that and point the row at it. Runs once per card, on its own.
+ */
+function useHeicFix(photo: PhotoView) {
+  const needed = looksHeic({ name: photo.fileName, type: photo.contentType }) && Boolean(photo.src);
+  const [state, setState] = useState<"idle" | "converting" | "failed">(needed ? "converting" : "idle");
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const started = useRef(-1);
+
+  useEffect(() => {
+    if (!needed || !photo.src || started.current === attempt) return;
+    started.current = attempt;
+    const src = photo.src;
+    (async () => {
+      try {
+        setState("converting");
+        const original = await fetch(src);
+        if (!original.ok) throw new Error(`Couldn't fetch the original (${original.status}).`);
+        const jpeg = await heicToJpeg(await original.blob(), photo.fileName ?? "photo.heic");
+        const target = await prepareUploads([{ name: jpeg.name, type: jpeg.type, size: jpeg.size }]);
+        if (!target.ok) throw new Error(target.message);
+        const [, size] = await Promise.all([putToStorage(target.data[0].signedUrl, jpeg), dimensions(jpeg)]);
+        const swapped = await swapPhotoFile(photo.id, {
+          path: target.data[0].path,
+          fileName: jpeg.name,
+          contentType: jpeg.type,
+          sizeBytes: jpeg.size,
+          ...size,
+        });
+        if (!swapped.ok) throw new Error(swapped.message);
+        // refresh() in the action re-renders the page with the JPEG's URL.
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Conversion failed.");
+        setState("failed");
+      }
+    })();
+  }, [needed, photo.src, photo.id, photo.fileName, attempt]);
+
+  return { state: needed ? state : "idle", error, retry: () => setAttempt((n) => n + 1) } as const;
 }
