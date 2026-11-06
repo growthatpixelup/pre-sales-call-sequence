@@ -4,6 +4,8 @@ import { dashboardTimeZone } from "@/lib/analytics";
 import { supabase } from "@/lib/supabase";
 import { xAvatarUrl } from "@/lib/leads/x-leads";
 import { NotConnected } from "./errors";
+import type { PhotoView } from "./photo-library";
+import { readPhotos } from "./photos";
 import { readTypefullyPublished } from "./schedulers/typefully";
 import { buildAnalytics, postKey } from "./buffer-analytics";
 import { readXEmbeds } from "./x-embed";
@@ -92,6 +94,11 @@ export function loadScheduler(scheduler: Scheduler, now: Date): Promise<SourceRe
 /** The swipe file and its sync history, written by the Grok bot. */
 export function loadSwipes(): Promise<SourceResult<SwipeFile>> {
   return load("Swipe file", readSwipes);
+}
+
+/** Photo library: table `photos` and Storage bucket `photos` (migration 015). */
+export function loadPhotos(): Promise<SourceResult<PhotoView[]>> {
+  return load("Photo library", readPhotos);
 }
 
 // ---------- Supabase: tables `swipes` and `swipe_runs` (migration 013, contract in docs/content-os.md) ----------

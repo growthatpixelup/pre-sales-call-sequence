@@ -10,6 +10,7 @@ source without credentials shows "not connected" and names the env vars it needs
 | `lib/content/sources.ts` | **The data layer.** One loader per source; pages only call these. |
 | `lib/content/schedulers/` | Typefully (API v2) and Buffer (GraphQL) readers, read-only, cached 3 minutes |
 | `lib/content/config.ts` | Creator handles, Typefully social set (338929), target cadence, outside-tool links |
+| `lib/content/photos.ts`, `photo-library.ts` | Photo library (`/dashboard/content/photos`): private Storage bucket + `photos` table (migration 015); browser uploads direct to Storage via signed upload URLs |
 | `lib/content/analytics.ts`, `calendar.ts`, `swipes.ts` | Pure maths (totals, outliers, merging schedulers, health, filters), tested in `tests/content/` |
 | `app/dashboard/content/` | The three pages and shared pieces (`_components/`) |
 | `lib/content/mcp.ts`, `app/api/mcp/route.ts` | Read-only MCP server so Claude can pull outliers (see below) |
